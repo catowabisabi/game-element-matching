@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../pet/pet_state.dart';
+import '../../services/audio_service.dart';
 import '../../services/local_store.dart';
 import '../domain/element_type.dart';
 import '../domain/tile.dart';
@@ -21,6 +22,7 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   late GameEngine _engine;
+  final _audio = AudioService();
   PetState _pet = PetState.initial();
   bool _loading = true;
   bool _showPet = false;
@@ -31,6 +33,7 @@ class _GameScreenState extends State<GameScreen> {
   void initState() {
     super.initState();
     _engine = GameEngine();
+    _audio.playBgm();
     _load();
   }
 
@@ -52,15 +55,24 @@ class _GameScreenState extends State<GameScreen> {
     await widget.store.savePet(_pet);
   }
 
-  void _move(Direction direction) {
+  Future<void> _move(Direction direction) async {
     final beforeGameOver = _game.gameOver || _game.won;
-    setState(() {
-      _engine.move(direction);
-      if (!beforeGameOver && (_game.gameOver || _game.won)) {
-        _pet = _pet.afterGame(_game.score);
+    final result = _engine.move(direction);
+    if (!result) return;
+
+    _audio.playMove();
+    setState(() {});
+    await _save();
+    if (!beforeGameOver && (_game.gameOver || _game.won)) {
+      if (_game.won) {
+        _audio.playWin();
+      } else {
+        _audio.playGameOver();
       }
-    });
-    _save();
+      _pet = _pet.afterGame(_game.score);
+      setState(() {});
+      await _save();
+    }
   }
 
   void _restart() {
@@ -194,7 +206,21 @@ class _GameScreenState extends State<GameScreen> {
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(18),
-              child: _board(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _board(),
+                  const SizedBox(height: 8),
+                  Text(
+                    '👆 上滑查看寵物',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.35),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -219,8 +245,15 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
           ),
-          _iconAction(Icons.pets_rounded, () => setState(() => _showPet = true)),
           _iconAction(Icons.refresh_rounded, _restart),
+          const SizedBox(width: 4),
+          FloatingActionButton.small(
+            onPressed: () => setState(() => _showPet = true),
+            backgroundColor: const Color(0xff6fe08b).withOpacity(0.9),
+            foregroundColor: Colors.white,
+            tooltip: '查看寵物',
+            child: const Icon(Icons.pets_rounded),
+          ),
         ],
       ),
     );
@@ -638,70 +671,75 @@ class _TileCell extends StatelessWidget {
         ? const Color(0xff20242d)
         : Colors.white;
 
-    return TweenAnimationBuilder<double>(
-      tween: Tween(
-        begin: tile.justSpawned ? 0.74 : 1,
-        end: tile.justMerged ? 1.05 : 1,
-      ),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutBack,
-      builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              color.withOpacity(0.98),
-              Color.lerp(color, Colors.black, 0.24)!,
+    return AnimatedOpacity(
+      opacity: tile.justSpawned || tile.justMerged ? 0.74 : 1.0,
+      duration: const Duration(milliseconds: 200),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(
+          begin: tile.justSpawned ? 0.74 : 1,
+          end: tile.justMerged ? 1.05 : 1,
+        ),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) {
+          return Transform.scale(scale: scale, child: child);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                color.withOpacity(0.98),
+                Color.lerp(color, Colors.black, 0.24)!,
+              ],
+            ),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: highlighted
+                  ? const Color(0xffffe1a6)
+                  : Colors.white.withOpacity(tile.type == ElementType.stone ? 0.18 : 0.08),
+              width: highlighted ? 2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(tile.justMerged ? 0.8 : 0.34),
+                blurRadius: tile.justMerged ? 24 : (tile.type == ElementType.sage ? 22 : 12),
+                spreadRadius: tile.justMerged ? 8 : 0,
+                offset: const Offset(0, 5),
+              ),
             ],
           ),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: highlighted
-                ? const Color(0xffffe1a6)
-                : Colors.white.withOpacity(tile.type == ElementType.stone ? 0.18 : 0.08),
-            width: highlighted ? 2 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.34),
-              blurRadius: tile.type == ElementType.sage ? 22 : 12,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Padding(
-              padding: const EdgeInsets.all(7),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    tile.type == ElementType.sage ? '賢者' : tile.type.label,
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  if (tile.isBasic && tile.level > 1) ...[
-                    const SizedBox(height: 4),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.all(7),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Text(
-                      'Lv.${tile.level}',
+                      tile.type == ElementType.sage ? '賢者' : tile.type.label,
                       style: TextStyle(
-                        color: textColor.withOpacity(0.9),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
+                        color: textColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
+                    if (tile.isBasic && tile.level > 1) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Lv.${tile.level}',
+                        style: TextStyle(
+                          color: textColor.withOpacity(0.9),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
