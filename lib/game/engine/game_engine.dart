@@ -30,6 +30,7 @@ class GameEngine {
       gameOver: false,
       won: false,
       coins: coins,
+      shieldActive: false,
     );
   }
 
@@ -61,6 +62,15 @@ class GameEngine {
     var nextGrid = outcome.grid;
     var nextMoveCount = snapshot.moveCount + 1;
     if (nextMoveCount % stoneInterval == 0) {
+      if (snapshot.shieldActive) {
+        snapshot = snapshot.copyWith(
+          grid: nextGrid,
+          moveCount: nextMoveCount,
+          shieldActive: false,
+          lastMessage: '護盾擋住了石頭',
+        );
+        return true;
+      }
       nextGrid = _spawnStoneOn(nextGrid);
     }
     nextGrid = _spawnTileOn(nextGrid);
@@ -131,6 +141,67 @@ class GameEngine {
       coins: snapshot.coins - hintCost,
       hintDirection: direction,
       lastMessage: '元素建議往${direction.label}',
+    );
+    return true;
+  }
+
+  bool buyMana() {
+    const manaCostCoins = 15;
+    if (snapshot.coins < manaCostCoins) {
+      snapshot = snapshot.copyWith(lastMessage: '法術水晶需要 $manaCostCoins 金幣');
+      return false;
+    }
+    snapshot = snapshot.copyWith(
+      coins: snapshot.coins - manaCostCoins,
+      mana: snapshot.mana + 3,
+      lastMessage: '法術水晶已使用 +3 法力',
+    );
+    return true;
+  }
+
+  bool buyShield() {
+    const shieldCost = 20;
+    if (snapshot.coins < shieldCost) {
+      snapshot = snapshot.copyWith(lastMessage: '護盾需要 $shieldCost 金幣');
+      return false;
+    }
+    snapshot = snapshot.copyWith(
+      coins: snapshot.coins - shieldCost,
+      shieldActive: true,
+      lastMessage: '護盾已激活',
+    );
+    return true;
+  }
+
+  bool buyReroll() {
+    const rerollCost = 25;
+    if (snapshot.coins < rerollCost) {
+      snapshot = snapshot.copyWith(lastMessage: '重骰需要 $rerollCost 金幣');
+      return false;
+    }
+
+    final grid = List<Tile?>.from(snapshot.grid);
+    final candidates = [
+      for (var i = 0; i < grid.length; i++)
+        if (grid[i] != null && grid[i]!.type != ElementType.stone && grid[i]!.type != ElementType.sage) i,
+    ];
+    if (candidates.isEmpty) {
+      snapshot = snapshot.copyWith(lastMessage: '沒有可重骰的元素');
+      return false;
+    }
+
+    final target = candidates[_random.nextInt(candidates.length)];
+    final types = [ElementType.fire, ElementType.water, ElementType.earth, ElementType.plant];
+    grid[target] = Tile(
+      type: types[_random.nextInt(types.length)],
+      level: 1,
+      justSpawned: true,
+    );
+
+    snapshot = snapshot.copyWith(
+      grid: grid,
+      coins: snapshot.coins - rerollCost,
+      lastMessage: '重骰了一個元素',
     );
     return true;
   }
@@ -325,7 +396,7 @@ class GameEngine {
       return grid;
     }
 
-    grid[empty[_random.nextInt(empty.length)]] = const Tile(
+    grid[empty[_random.nextInt(empty.length)]] = Tile(
       type: ElementType.stone,
       level: 0,
       justSpawned: true,

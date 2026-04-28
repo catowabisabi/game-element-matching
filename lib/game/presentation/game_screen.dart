@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../pet/pet_state.dart';
 import '../../services/audio_service.dart';
@@ -11,6 +12,305 @@ import '../engine/direction.dart';
 import '../engine/game_engine.dart';
 import '../engine/game_snapshot.dart';
 
+// --- Tutorial Overlay ---
+
+class TutorialStep {
+  final String text;
+  final Alignment? targetAlignment;
+  final Offset? targetOffset;
+  final double? targetSize;
+
+  const TutorialStep({
+    required this.text,
+    this.targetAlignment,
+    this.targetOffset,
+    this.targetSize,
+  });
+}
+
+class TutorialOverlay extends StatefulWidget {
+  final List<TutorialStep> steps;
+  final VoidCallback onDismiss;
+
+  const TutorialOverlay({
+    super.key,
+    required this.steps,
+    required this.onDismiss,
+  });
+
+  @override
+  State<TutorialOverlay> createState() => _TutorialOverlayState();
+}
+
+class _TutorialOverlayState extends State<TutorialOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+  int _currentStep = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 340),
+      vsync: this,
+    );
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _scaleAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutBack,
+    );
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _nextStep() {
+    if (_currentStep < widget.steps.length - 1) {
+      _controller.reverse().then((_) {
+        if (mounted) {
+          setState(() => _currentStep++);
+          _controller.forward();
+        }
+      });
+    } else {
+      _controller.reverse().then((_) => widget.onDismiss());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final step = widget.steps[_currentStep];
+    return GestureDetector(
+      onTap: _nextStep,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Stack(
+            children: [
+              // Semi-transparent dark overlay
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: Container(color: Colors.black.withOpacity(0.72)),
+              ),
+              // Content
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  alignment: step.targetAlignment ?? Alignment.center,
+                  child: _buildTooltip(step),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTooltip(TutorialStep step) {
+    return Align(
+      alignment: step.targetAlignment ?? Alignment.center,
+      child: Container(
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xff1e2540),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.12)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              step.text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_currentStep + 1}/${widget.steps.length}',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.44),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '點擊繼續',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.44),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Swipe Animation Overlay ---
+
+class SwipeArrow extends StatefulWidget {
+  final Alignment alignment;
+  final IconData icon;
+
+  const SwipeArrow({
+    super.key,
+    required this.alignment,
+    required this.icon,
+  });
+
+  @override
+  State<SwipeArrow> createState() => _SwipeArrowState();
+}
+
+class _SwipeArrowState extends State<SwipeArrow>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 900),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        final offset = widget.alignment.x * 16 * _animation.value;
+        final offsetY = widget.alignment.y * 16 * _animation.value;
+        return Transform.translate(
+          offset: Offset(offset, offsetY),
+          child: Icon(
+            widget.icon,
+            color: Colors.white.withOpacity(0.7),
+            size: 40,
+          ),
+        );
+      },
+    );
+  }
+}
+
+// --- Tooltip Popup ---
+
+class TooltipPopup extends StatefulWidget {
+  final String text;
+  final VoidCallback onDismiss;
+
+  const TooltipPopup({
+    super.key,
+    required this.text,
+    required this.onDismiss,
+  });
+
+  @override
+  State<TooltipPopup> createState() => _TooltipPopupState();
+}
+
+class _TooltipPopupState extends State<TooltipPopup>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 260),
+      vsync: this,
+    );
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _scaleAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _controller.forward();
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        _controller.reverse().then((_) => widget.onDismiss());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xff2a3555),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: Text(
+            widget.text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class GameScreen extends StatefulWidget {
   const GameScreen({required this.store, super.key});
 
@@ -20,12 +320,34 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   late GameEngine _engine;
   final _audio = AudioService();
   PetState _pet = PetState.initial();
   bool _loading = true;
   bool _showPet = false;
+  final GlobalKey<_PetAnimationWidgetState> _petAnimKey = GlobalKey();
+
+  // Tutorial state
+  bool _showTutorial = false;
+  bool _seenTutorial = false;
+  String? _activeTooltip;
+  bool _showPetTooltips = false;
+  int _mergeCount = 0;
+  int _hintCount = 0;
+  int _manaCount = 0;
+  int _feedCount = 0;
+
+  // Animated board state - tracks tiles with their positions for animation
+  Map<int, _AnimatedTile> _animatedTiles = {};
+  // Grid dimensions for animation calculation
+  double _cellSize = 0;
+  double _spacing = 10;
+
+  // Invalid move feedback
+  late AnimationController _shakeController;
+  late Animation<double> _shakeAnimation;
+  bool _shakeBorder = false;
 
   GameSnapshot get _game => _engine.snapshot;
 
@@ -34,12 +356,28 @@ class _GameScreenState extends State<GameScreen> {
     super.initState();
     _engine = GameEngine();
     _audio.playBgm();
+    _shakeController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _shakeAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: 5), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 5, end: -5), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -5, end: 5), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 5, end: 0), weight: 1),
+    ]).animate(_shakeController);
+    _shakeController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() => _shakeBorder = false);
+      }
+    });
     _load();
   }
 
   Future<void> _load() async {
     final savedGame = await widget.store.loadGame();
     final savedPet = await widget.store.loadPet();
+    _seenTutorial = await widget.store.getSeenTutorial();
     if (!mounted) {
       return;
     }
@@ -47,6 +385,9 @@ class _GameScreenState extends State<GameScreen> {
       _engine = GameEngine(initialSnapshot: savedGame);
       _pet = savedPet;
       _loading = false;
+      if (!_seenTutorial) {
+        _showTutorial = true;
+      }
     });
   }
 
@@ -55,10 +396,24 @@ class _GameScreenState extends State<GameScreen> {
     await widget.store.savePet(_pet);
   }
 
-  Future<void> _move(Direction direction) async {
+  @override
+  void dispose() {
+    _shakeController.dispose();
+    super.dispose();
+  }
+
+Future<void> _move(Direction direction) async {
     final beforeGameOver = _game.gameOver || _game.won;
     final result = _engine.move(direction);
-    if (!result) return;
+    if (!result) {
+      // Invalid move - show feedback
+      setState(() {
+        _shakeBorder = true;
+      });
+      _shakeController.forward(from: 0);
+      setState(() {});
+      return;
+    }
 
     _audio.playMove();
     setState(() {});
@@ -66,6 +421,8 @@ class _GameScreenState extends State<GameScreen> {
     if (!beforeGameOver && (_game.gameOver || _game.won)) {
       if (_game.won) {
         _audio.playWin();
+        // Trigger happy animation on win
+        _petAnimKey.currentState?.triggerHappyAnimation();
       } else {
         _audio.playGameOver();
       }
@@ -81,12 +438,22 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _useManaSkill() {
-    setState(() => _engine.useManaSkill());
+    final result = _engine.useManaSkill();
+    if (result && _manaCount == 0) {
+      _manaCount = 1;
+      _activeTooltip = '法力技能消耗3法力移除最低級元素';
+    }
+    setState(() {});
     _save();
   }
 
   void _buyHint() {
-    setState(() => _engine.buyHint());
+    final result = _engine.buyHint();
+    if (result && _hintCount == 0) {
+      _hintCount = 1;
+      _activeTooltip = '提示用10金幣顯示推薦方向';
+    }
+    setState(() {});
     _save();
   }
 
@@ -100,6 +467,12 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     final recentElement = _dominantElement();
+    final fed = _feedCount == 0;
+    if (fed) {
+      _feedCount = 1;
+      _activeTooltip = '餵食寵物需要5金幣';
+    }
+    final oldStage = _pet.stage;
     setState(() {
       _engine.snapshot = _game.copyWith(
         coins: _game.coins - feedCost,
@@ -108,6 +481,54 @@ class _GameScreenState extends State<GameScreen> {
       _pet = _pet.feed(recentElement);
     });
     _save();
+
+    // Trigger eat animation
+    _petAnimKey.currentState?.triggerEatAnimation();
+
+    // Trigger evolve animation if stage changed
+    if (_pet.stage > oldStage) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        _petAnimKey.currentState?.triggerEvolveAnimation();
+      });
+    }
+  }
+
+  void _showShop() {
+    _audio.playShop();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xff1a1f35),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => _ShopSheet(
+        coins: _game.coins,
+        onBuy: (item) {
+          setState(() {
+            switch (item) {
+              case _ShopItem.hint:
+                _buyHint();
+                break;
+              case _ShopItem.mana:
+                _engine.buyMana();
+                break;
+              case _ShopItem.food:
+                _feedPet();
+                break;
+              case _ShopItem.shield:
+                _engine.buyShield();
+                break;
+              case _ShopItem.reroll:
+                _engine.buyReroll();
+                break;
+            }
+          });
+          _audio.playShop();
+          _save();
+          Navigator.pop(context);
+        },
+      ),
+    );
   }
 
   ElementType _dominantElement() {
@@ -132,20 +553,6 @@ class _GameScreenState extends State<GameScreen> {
       return;
     }
 
-    if (dy < -dx.abs() && dy < -180) {
-      if (_showPet) {
-        return;
-      }
-      setState(() => _showPet = true);
-      return;
-    }
-    if (dy > dx.abs() && dy > 180) {
-      if (_showPet) {
-        setState(() => _showPet = false);
-        return;
-      }
-    }
-
     if (_showPet) {
       return;
     }
@@ -168,32 +575,86 @@ class _GameScreenState extends State<GameScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xff10121f),
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanEnd: _handlePanEnd,
-        onDoubleTap: _showPet ? _feedPet : _useManaSkill,
-        onLongPress: _showPet ? _feedPet : _buyHint,
-        child: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xff10121f),
-                Color(0xff16223b),
-                Color(0xff211832),
-              ],
+      body: Stack(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanEnd: _handlePanEnd,
+            onDoubleTap: _showPet ? _feedPet : _useManaSkill,
+            onLongPress: _showPet ? _feedPet : _buyHint,
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xff10121f),
+                    Color(0xff16223b),
+                    Color(0xff211832),
+                  ],
+                ),
+              ),
+              child: SafeArea(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  child: _showPet ? _petLayer() : _gameLayer(),
+                ),
+              ),
             ),
           ),
-          child: SafeArea(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              child: _showPet ? _petLayer() : _gameLayer(),
+          if (_showTutorial)
+            TutorialOverlay(
+              steps: _tutorialSteps,
+              onDismiss: _dismissTutorial,
             ),
-          ),
-        ),
+          if (_activeTooltip != null)
+            Positioned(
+              bottom: 60,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: TooltipPopup(
+                  text: _activeTooltip!,
+                  onDismiss: () => setState(() => _activeTooltip = null),
+                ),
+              ),
+            ),
+        ],
       ),
     );
+  }
+
+  List<TutorialStep> get _tutorialSteps => [
+        const TutorialStep(
+          text: '滑動螢幕移動元素\n左右下方向滑動，上方為寵物按鈕',
+          targetAlignment: Alignment.center,
+        ),
+        const TutorialStep(
+          text: '相同元素合併升級\n火＋火 →更高級火元素',
+          targetAlignment: Alignment.center,
+        ),
+        const TutorialStep(
+          text: '長按顯示提示\n花費10金幣推薦方向',
+          targetAlignment: Alignment.center,
+        ),
+        const TutorialStep(
+          text: '雙擊使用法力技能\n消耗3法力移除最低級元素',
+          targetAlignment: Alignment.center,
+        ),
+        const TutorialStep(
+          text: '點擊右上角寵物按鈕\n查看並餵食寵物',
+          targetAlignment: Alignment.topRight,
+        ),
+      ];
+
+  Future<void> _dismissTutorial() async {
+    await widget.store.setSeenTutorial(true);
+    if (mounted) {
+      setState(() {
+        _showTutorial = false;
+        _seenTutorial = true;
+      });
+    }
   }
 
   Widget _gameLayer() {
@@ -212,7 +673,7 @@ class _GameScreenState extends State<GameScreen> {
                   _board(),
                   const SizedBox(height: 8),
                   Text(
-                    '👆 上滑查看寵物',
+                    '👆 點擊右上角寵物按鈕',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.35),
                       fontSize: 12,
@@ -245,10 +706,19 @@ class _GameScreenState extends State<GameScreen> {
               ),
             ),
           ),
+          _iconAction(Icons.shopping_bag_rounded, _showShop),
+          const SizedBox(width: 4),
           _iconAction(Icons.refresh_rounded, _restart),
           const SizedBox(width: 4),
           FloatingActionButton.small(
-            onPressed: () => setState(() => _showPet = true),
+            onPressed: () {
+              setState(() {
+                _showPet = !_showPet;
+                if (_showPet && !_seenTutorial) {
+                  _showPetTooltips = true;
+                }
+              });
+            },
             backgroundColor: const Color(0xff6fe08b).withOpacity(0.9),
             foregroundColor: Colors.white,
             tooltip: '查看寵物',
@@ -325,18 +795,69 @@ class _GameScreenState extends State<GameScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final side = math.min(constraints.maxWidth, constraints.maxHeight);
-        return SizedBox.square(
-          dimension: math.min(side, 520),
-          child: Stack(
-            children: [
-              Container(
+        final boardSize = math.min(side, 520).toDouble();
+        // Calculate cell size based on 4x4 grid with 10px spacing
+        final totalSpacing = 10 * (gridSize - 1); // 30
+        _cellSize = (boardSize - totalSpacing) / gridSize;
+        _spacing = 10;
+
+        // Build animated tile map from current game state
+        final newAnimatedTiles = <int, _AnimatedTile>{};
+        for (var i = 0; i < _game.grid.length; i++) {
+          final tile = _game.grid[i];
+          if (tile != null) {
+            // Check if this tile was already being tracked (survived a move)
+            final existing = _animatedTiles[tile.id];
+            if (existing != null) {
+              // Update tile data but keep tracking at new position
+              newAnimatedTiles[tile.id] = _AnimatedTile(
+                id: tile.id,
+                tile: tile,
+                targetIndex: i,
+                currentIndex: existing.currentIndex,
+                isNew: false,
+              );
+            } else {
+              // New tile (just spawned)
+              newAnimatedTiles[tile.id] = _AnimatedTile(
+                id: tile.id,
+                tile: tile,
+                targetIndex: i,
+                currentIndex: i,
+                isNew: tile.justSpawned,
+              );
+            }
+          }
+        }
+        _animatedTiles = newAnimatedTiles;
+
+        return AnimatedBuilder(
+          animation: _shakeAnimation,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(_shakeAnimation.value, 0),
+              child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: Colors.black.withOpacity(0.26),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.1), width: 2),
+                  border: Border.all(
+                    color: _shakeBorder
+                        ? const Color(0xffff6f6f)
+                        : Colors.white.withOpacity(0.1),
+                    width: 2,
+                  ),
                 ),
-                child: GridView.builder(
+                child: child,
+              ),
+            );
+          },
+          child: SizedBox.square(
+            dimension: boardSize,
+            child: Stack(
+              children: [
+                // Background grid
+                GridView.builder(
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: gridSize * gridSize,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -345,19 +866,48 @@ class _GameScreenState extends State<GameScreen> {
                     crossAxisSpacing: 10,
                   ),
                   itemBuilder: (context, index) {
-                    final tile = _game.grid[index];
-                    return _TileCell(
-                      tile: tile,
-                      highlighted: _isHintEdge(index),
-                    );
+                    return _buildEmptyCell(index);
                   },
                 ),
-              ),
-              if (_game.gameOver || _game.won) _resultOverlay(),
-            ],
+                // Animated tiles layer
+                ..._animatedTiles.values.map((animatedTile) {
+                  final row = animatedTile.currentIndex ~/ gridSize;
+                  final col = animatedTile.currentIndex % gridSize;
+
+                  return AnimatedPositioned(
+                    key: ValueKey(animatedTile.id),
+                    duration: Duration(milliseconds: animatedTile.isNew ? 300 : 200),
+                    curve: animatedTile.isNew ? Curves.easeOutBack : Curves.easeOutCubic,
+                    left: col * (_cellSize + _spacing),
+                    top: row * (_cellSize + _spacing),
+                    child: _TileCell(
+                      tile: animatedTile.tile,
+                      highlighted: _isHintEdge(animatedTile.targetIndex),
+                      cellSize: _cellSize,
+                    ),
+                  );
+                }),
+                if (_game.gameOver || _game.won) _resultOverlay(),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildEmptyCell(int index) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      decoration: BoxDecoration(
+        color: _isHintEdge(index)
+            ? const Color(0xffffb452).withOpacity(0.16)
+            : Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: _isHintEdge(index)
+            ? Border.all(color: const Color(0xffffb452).withOpacity(0.4))
+            : null,
+      ),
     );
   }
 
@@ -475,7 +1025,7 @@ class _GameScreenState extends State<GameScreen> {
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: Text(
-            message ?? '滑動合成，長按提示，雙擊施法，上滑看寵物',
+            message ?? '滑動合成，長按提示，雙擊施法，點擊右上角寵物按鈕',
             key: ValueKey(message),
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -491,118 +1041,163 @@ class _GameScreenState extends State<GameScreen> {
 
   Widget _petLayer() {
     final petColor = _pet.affinity.colorForLevel(_pet.stage);
-    return Column(
-      key: const ValueKey('pet'),
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(18, 10, 12, 4),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Pet Layer',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xff6fe08b),
-                  ),
-                ),
-              ),
-              _iconAction(Icons.keyboard_arrow_down_rounded, () {
-                setState(() => _showPet = false);
-              }),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        Column(
+          key: const ValueKey('pet'),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 12, 4),
+              child: Row(
                 children: [
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.92, end: 1),
-                    duration: const Duration(milliseconds: 700),
-                    curve: Curves.elasticOut,
-                    builder: (context, scale, child) {
-                      return Transform.scale(scale: scale, child: child);
-                    },
-                    child: Container(
-                      width: 180,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            petColor.withOpacity(0.96),
-                            petColor.withOpacity(0.52),
-                            Colors.black.withOpacity(0.16),
-                          ],
-                        ),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.24),
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: petColor.withOpacity(0.38),
-                            blurRadius: 32,
-                            spreadRadius: 4,
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          _pet.affinity.shortLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 64,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
+                  const Expanded(
+                    child: Text(
+                      'Pet Layer',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xff6fe08b),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 26),
-                  Text(
-                    _pet.formName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '階段 ${_pet.stage}  ·  親和 ${_pet.affinity.label}',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.58),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  _petMeter('飽足', _pet.hunger / 100, const Color(0xffffb452)),
-                  const SizedBox(height: 12),
-                  _petMeter('心情', _pet.mood / 100, const Color(0xff65d6ff)),
-                  const SizedBox(height: 12),
-                  _petMeter('進化', _pet.evolutionProgress, const Color(0xffc991ff)),
-                  const SizedBox(height: 28),
-                  Text(
-                    '長按或雙擊餵食  ·  5 金幣',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.44),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  _iconAction(Icons.keyboard_arrow_down_rounded, () {
+                    setState(() => _showPet = false);
+                  }),
                 ],
               ),
             ),
-          ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _PetAnimationWidget(
+                        key: _petAnimKey,
+                        onEatTriggered: () { _audio.playEat(); },
+                        onHappyTriggered: () { _audio.playWin(); },
+                        onEvolveTriggered: () { _audio.playLevelUp(); },
+                        child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.92, end: 1),
+                      duration: const Duration(milliseconds: 700),
+                      curve: Curves.elasticOut,
+                      builder: (context, scale, child) {
+                        return Transform.scale(scale: scale, child: child);
+                      },
+                      child: Container(
+                        width: 180,
+                        height: 180,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              petColor.withOpacity(0.96),
+                              petColor.withOpacity(0.52),
+                              Colors.black.withOpacity(0.16),
+                            ],
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.24),
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: petColor.withOpacity(0.38),
+                              blurRadius: 32,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            _pet.affinity.shortLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 64,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                      const SizedBox(height: 26),
+                      Text(
+                        _pet.formName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '階段 ${_pet.stage}  ·  親和 ${_pet.affinity.label}',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.58),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      _petMeter('飽足', _pet.hunger / 100, const Color(0xffffb452)),
+                      const SizedBox(height: 12),
+                      _petMeter('心情', _pet.mood / 100, const Color(0xff65d6ff)),
+                      const SizedBox(height: 12),
+                      _petMeter('進化', _pet.evolutionProgress, const Color(0xffc991ff)),
+                      const SizedBox(height: 28),
+                      Text(
+                        '長按或雙擊餵食  ·  5 金幣',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.44),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            _messageBand(),
+          ],
         ),
-        _messageBand(),
+        if (_showPetTooltips) ...[
+          Positioned(
+            bottom: 200,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: TooltipPopup(
+                text: '飢餓度影響寵物心情',
+                onDismiss: () {},
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 160,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: TooltipPopup(
+                text: '心情影響融合經驗值',
+                onDismiss: () {},
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 120,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: TooltipPopup(
+                text: '進化需要累積經驗',
+                onDismiss: () => setState(() => _showPetTooltips = false),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -639,31 +1234,289 @@ class _GameScreenState extends State<GameScreen> {
   }
 }
 
+class _PetAnimationWidget extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onEatTriggered;
+  final VoidCallback? onHappyTriggered;
+  final VoidCallback? onEvolveTriggered;
+
+  const _PetAnimationWidget({
+    super.key,
+    required this.child,
+    this.onEatTriggered,
+    this.onHappyTriggered,
+    this.onEvolveTriggered,
+  });
+
+  @override
+  State<_PetAnimationWidget> createState() => _PetAnimationWidgetState();
+}
+
+class _PetAnimationWidgetState extends State<_PetAnimationWidget>
+    with TickerProviderStateMixin {
+  // Idle breathing
+  late AnimationController _breathController;
+  late Animation<double> _breathAnimation;
+
+  // Eating bounce
+  late AnimationController _eatController;
+  late Animation<double> _eatScaleAnimation;
+
+  // Happy wiggle
+  late AnimationController _happyController;
+  late Animation<double> _happyRotationAnimation;
+  late Animation<double> _happyScaleAnimation;
+
+  // Evolution glow
+  late AnimationController _evolveController;
+  late Animation<double> _evolveScaleAnimation;
+  late Animation<double> _evolveGlowAnimation;
+
+  // Floating particles for eat animation
+  final List<_FloatingParticle> _particles = [];
+  int _particleIdCounter = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initBreathAnimation();
+    _initEatAnimation();
+    _initHappyAnimation();
+    _initEvolveAnimation();
+  }
+
+  void _initBreathAnimation() {
+    _breathController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+    _breathAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(parent: _breathController, curve: Curves.easeInOut),
+    );
+    _breathController.repeat(reverse: true);
+  }
+
+  void _initEatAnimation() {
+    _eatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _eatScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.2, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _eatController, curve: Curves.easeInOut));
+    _eatController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() => _particles.clear());
+      }
+    });
+  }
+
+  void _initHappyAnimation() {
+    _happyController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _happyRotationAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: -0.1), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -0.1, end: 0.1), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 0.1, end: -0.1), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -0.1, end: 0.1), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 0.1, end: 0.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
+    _happyScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
+  }
+
+  void _initEvolveAnimation() {
+    _evolveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    _evolveScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 1.3, end: 1.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _evolveController, curve: Curves.easeOutBack));
+    _evolveGlowAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.6), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: 0.6, end: 0.0), weight: 1),
+    ]).animate(CurvedAnimation(parent: _evolveController, curve: Curves.easeInOut));
+  }
+
+  void triggerEatAnimation() {
+    _eatController.forward(from: 0);
+    // Spawn floating particles
+    setState(() {
+      _particles.clear();
+      for (int i = 0; i < 5; i++) {
+        _particles.add(_FloatingParticle(
+          id: _particleIdCounter++,
+          angle: -0.5 + i * 0.25,
+          delay: i * 0.05,
+        ));
+      }
+    });
+    widget.onEatTriggered?.call();
+  }
+
+  void triggerHappyAnimation() {
+    _happyController.forward(from: 0);
+    widget.onHappyTriggered?.call();
+  }
+
+  void triggerEvolveAnimation() {
+    _evolveController.forward(from: 0);
+    widget.onEvolveTriggered?.call();
+  }
+
+  @override
+  void dispose() {
+    _breathController.dispose();
+    _eatController.dispose();
+    _happyController.dispose();
+    _evolveController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _breathController,
+        _eatController,
+        _happyController,
+        _evolveController,
+      ]),
+      builder: (context, child) {
+        // Determine which animation is active (priority: evolve > eat > happy > breath)
+        double scale = _breathAnimation.value;
+        double rotation = 0;
+        double glowOpacity = 0;
+
+        if (_evolveController.isAnimating) {
+          scale = _evolveScaleAnimation.value;
+          glowOpacity = _evolveGlowAnimation.value;
+        } else if (_eatController.isAnimating) {
+          scale = _eatScaleAnimation.value;
+        } else if (_happyController.isAnimating) {
+          scale = _happyScaleAnimation.value;
+          rotation = _happyRotationAnimation.value;
+        }
+
+        return Transform.scale(
+          scale: scale,
+          child: Transform.rotate(
+            angle: rotation,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                widget.child,
+                // Floating particles during eat
+                for (final particle in _particles)
+                  _FloatingParticleWidget(
+                    particle: particle,
+                    eatProgress: _eatController.value,
+                    eatDelay: particle.delay,
+                  ),
+                // Glow overlay for evolution
+                if (_evolveController.isAnimating)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(glowOpacity),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FloatingParticle {
+  final int id;
+  final double angle;
+  final double delay;
+
+  _FloatingParticle({
+    required this.id,
+    required this.angle,
+    required this.delay,
+  });
+}
+
+class _FloatingParticleWidget extends StatelessWidget {
+  final _FloatingParticle particle;
+  final double eatProgress;
+  final double eatDelay;
+
+  const _FloatingParticleWidget({
+    required this.particle,
+    required this.eatProgress,
+    required this.eatDelay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final adjustedProgress = (eatProgress - particle.delay).clamp(0.0, 1.0);
+    if (adjustedProgress <= 0) return const SizedBox();
+
+    final double yOffset = -80 * Curves.easeOut.transform(adjustedProgress);
+    final double xOffset = 30 * particle.angle * Curves.easeInOut.transform(adjustedProgress);
+    final double opacity = (1 - adjustedProgress).clamp(0.0, 1.0);
+
+    return Positioned(
+      left: 90 + xOffset,
+      top: 90 + yOffset,
+      child: Opacity(
+        opacity: opacity,
+        child: const Text(
+          '💕',
+          style: TextStyle(fontSize: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedTile {
+  final int id;
+  final Tile tile;
+  final int targetIndex; // Final grid position
+  int currentIndex; // Animated current position
+  bool isNew; // True if this is a freshly spawned tile
+
+  _AnimatedTile({
+    required this.id,
+    required this.tile,
+    required this.targetIndex,
+    required this.currentIndex,
+    this.isNew = false,
+  });
+}
+
 class _TileCell extends StatelessWidget {
   const _TileCell({
     required this.tile,
     required this.highlighted,
+    required this.cellSize,
   });
 
   final Tile? tile;
   final bool highlighted;
+  final double cellSize;
 
   @override
   Widget build(BuildContext context) {
     final tile = this.tile;
     if (tile == null) {
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        decoration: BoxDecoration(
-          color: highlighted
-              ? const Color(0xffffb452).withOpacity(0.16)
-              : Colors.white.withOpacity(0.04),
-          borderRadius: BorderRadius.circular(8),
-          border: highlighted
-              ? Border.all(color: const Color(0xffffb452).withOpacity(0.4))
-              : null,
-        ),
-      );
+      return const SizedBox();
     }
 
     final color = tile.type.colorForLevel(tile.level);
@@ -671,21 +1524,20 @@ class _TileCell extends StatelessWidget {
         ? const Color(0xff20242d)
         : Colors.white;
 
-    return AnimatedOpacity(
+    Widget tileWidget = AnimatedOpacity(
       opacity: tile.justSpawned || tile.justMerged ? 0.74 : 1.0,
       duration: const Duration(milliseconds: 200),
       child: TweenAnimationBuilder<double>(
         tween: Tween(
-          begin: tile.justSpawned ? 0.74 : 1,
-          end: tile.justMerged ? 1.05 : 1,
+          begin: tile.justSpawned ? 0.0 : (tile.justMerged ? 0.8 : 1.0),
+          end: tile.justMerged ? 1.05 : 1.0,
         ),
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutBack,
+        duration: Duration(milliseconds: tile.justSpawned ? 300 : 180),
+        curve: tile.justSpawned ? Curves.easeOutBack : Curves.easeOutBack,
         builder: (context, scale, child) {
           return Transform.scale(scale: scale, child: child);
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+        child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -743,6 +1595,233 @@ class _TileCell extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+
+    return SizedBox(
+      width: cellSize,
+      height: cellSize,
+      child: tileWidget,
+    );
+  }
+}
+
+enum _ShopItem { hint, mana, food, shield, reroll }
+
+class _ShopSheet extends StatelessWidget {
+  const _ShopSheet({required this.coins, required this.onBuy});
+
+  final int coins;
+  final void Function(_ShopItem) onBuy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text(
+                '商店',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xff6fe08b).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xff6fe08b).withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('🪙', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$coins',
+                      style: const TextStyle(
+                        color: Color(0xff6fe08b),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.35,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _ShopCard(
+                emoji: '💡',
+                name: '提示藥水',
+                price: 10,
+                desc: '顯示建議方向 5 秒',
+                enabled: coins >= 10,
+                onTap: () => onBuy(_ShopItem.hint),
+              ),
+              _ShopCard(
+                emoji: '💎',
+                name: '法術水晶',
+                price: 15,
+                desc: '法術池 +3 法力',
+                enabled: coins >= 15,
+                onTap: () => onBuy(_ShopItem.mana),
+              ),
+              _ShopCard(
+                emoji: '🍖',
+                name: '寵物飼料',
+                price: 5,
+                desc: '餵食寵物',
+                enabled: coins >= 5,
+                onTap: () => onBuy(_ShopItem.food),
+              ),
+              _ShopCard(
+                emoji: '🛡️',
+                name: '護盾',
+                price: 20,
+                desc: '擋住下次石頭生成',
+                enabled: coins >= 20,
+                onTap: () => onBuy(_ShopItem.shield),
+              ),
+              _ShopCard(
+                emoji: '🎲',
+                name: '重骰',
+                price: 25,
+                desc: '隨機元素變 Lv1',
+                enabled: coins >= 25,
+                onTap: () => onBuy(_ShopItem.reroll),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShopCard extends StatelessWidget {
+  const _ShopCard({
+    required this.emoji,
+    required this.name,
+    required this.price,
+    required this.desc,
+    required this.onTap,
+    required this.enabled,
+  });
+
+  final String emoji;
+  final String name;
+  final int price;
+  final String desc;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        decoration: BoxDecoration(
+          color: enabled
+              ? Colors.white.withOpacity(0.07)
+              : Colors.white.withOpacity(0.03),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: enabled
+                ? Colors.white.withOpacity(0.12)
+                : Colors.white.withOpacity(0.05),
+          ),
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(height: 8),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(enabled ? 0.92 : 0.45),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    desc,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(enabled ? 0.5 : 0.3),
+                      fontSize: 12,
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Text('🪙', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+                      const SizedBox(width: 2),
+                      Text(
+                        '$price',
+                        style: TextStyle(
+                          color: enabled
+                              ? const Color(0xff6fe08b)
+                              : Colors.white.withOpacity(0.3),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (!enabled)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '金幣不足',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.4),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

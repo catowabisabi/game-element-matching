@@ -1,13 +1,18 @@
 import 'element_type.dart';
 
 class Tile {
-  const Tile({
+  static int _nextId = 0;
+
+  Tile({
     required this.type,
     this.level = 1,
     this.justMerged = false,
     this.justSpawned = false,
-  });
+    int? id,
+  }) : id = id ?? _nextId++;
 
+  // id can be null for deserialized tiles that don't have stable identity
+  final int id;
   final ElementType type;
   final int level;
   final bool justMerged;
@@ -20,6 +25,7 @@ class Tile {
       type == ElementType.earth;
 
   Tile copyWith({
+    int? id,
     ElementType? type,
     int? level,
     bool? justMerged,
@@ -30,6 +36,7 @@ class Tile {
       level: level ?? this.level,
       justMerged: justMerged ?? this.justMerged,
       justSpawned: justSpawned ?? this.justSpawned,
+      id: id ?? this.id,
     );
   }
 

@@ -10,23 +10,35 @@ class AudioService {
 
   // SFX for game events
   Future<void> playMerge() async {
-    await _sfxPlayer.play(AssetSource('sfx/merge.mp3'));
+    await _sfxPlayer.play(AssetSource('sfx/merge.ogg'));
   }
 
   Future<void> playSpawn() async {
-    await _sfxPlayer.play(AssetSource('sfx/spawn.mp3'));
+    await _sfxPlayer.play(AssetSource('sfx/spawn.ogg'));
   }
 
   Future<void> playMove() async {
-    await _sfxPlayer.play(AssetSource('sfx/move.mp3'));
+    await _sfxPlayer.play(AssetSource('sfx/move.ogg'));
   }
 
   Future<void> playGameOver() async {
-    await _sfxPlayer.play(AssetSource('sfx/gameover.mp3'));
+    await _sfxPlayer.play(AssetSource('sfx/gameover.ogg'));
   }
 
   Future<void> playWin() async {
-    await _sfxPlayer.play(AssetSource('sfx/win.mp3'));
+    await _sfxPlayer.play(AssetSource('sfx/win.ogg'));
+  }
+
+  Future<void> playShop() async {
+    await _sfxPlayer.play(AssetSource('sfx/shop.ogg'));
+  }
+
+  Future<void> playEat() async {
+    await _sfxPlayer.play(AssetSource('sfx/feed.ogg'));
+  }
+
+  Future<void> playLevelUp() async {
+    await _sfxPlayer.play(AssetSource('sfx/win.ogg'));
   }
 
   // BGM

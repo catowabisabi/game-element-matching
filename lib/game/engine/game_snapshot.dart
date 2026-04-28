@@ -17,6 +17,7 @@ class GameSnapshot {
     required this.coins,
     this.hintDirection,
     this.lastMessage,
+    this.shieldActive = false,
   });
 
   final List<Tile?> grid;
@@ -29,6 +30,7 @@ class GameSnapshot {
   final int coins;
   final Direction? hintDirection;
   final String? lastMessage;
+  final bool shieldActive;
 
   int get emptyCount => grid.where((tile) => tile == null).length;
 
@@ -79,6 +81,7 @@ class GameSnapshot {
     bool clearHint = false,
     String? lastMessage,
     bool clearMessage = false,
+    bool? shieldActive,
   }) {
     return GameSnapshot(
       grid: grid ?? this.grid,
@@ -91,6 +94,7 @@ class GameSnapshot {
       coins: coins ?? this.coins,
       hintDirection: clearHint ? null : hintDirection ?? this.hintDirection,
       lastMessage: clearMessage ? null : lastMessage ?? this.lastMessage,
+      shieldActive: shieldActive ?? this.shieldActive,
     );
   }
 }

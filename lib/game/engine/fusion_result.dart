@@ -15,7 +15,7 @@ class FusionResult {
 
 FusionResult? fuseTiles(Tile first, Tile second, double randomValue) {
   if (first.type == ElementType.sage || second.type == ElementType.sage) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.sage, level: 1),
       score: 10000,
     );
@@ -24,7 +24,7 @@ FusionResult? fuseTiles(Tile first, Tile second, double randomValue) {
   if (first.type == second.type && first.isBasic) {
     final newLevel = (first.level + 1).clamp(1, 4).toInt();
     if (newLevel == 4 && randomValue < 0.3) {
-      return const FusionResult(
+      return FusionResult(
         tile: Tile(type: ElementType.sage, level: 1),
         score: 5000,
       );
@@ -37,41 +37,42 @@ FusionResult? fuseTiles(Tile first, Tile second, double randomValue) {
   }
 
   if (_hasPair(first, second, ElementType.fire, ElementType.earth)) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.lava),
       score: 100,
     );
   }
 
   if (_hasPair(first, second, ElementType.water, ElementType.earth)) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.plant),
       score: 100,
     );
   }
 
   if (_hasPair(first, second, ElementType.fire, ElementType.water)) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.steam),
       score: 50,
     );
   }
 
   if (_hasPair(first, second, ElementType.plant, ElementType.fire)) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.lava),
       score: 150,
     );
   }
 
   if (_hasPair(first, second, ElementType.plant, ElementType.water)) {
-    return const FusionResult(
+    return FusionResult(
       tile: Tile(type: ElementType.plant, level: 2),
       score: 200,
     );
   }
 
-  if (first.type == ElementType.steam || second.type == ElementType.steam) {
+  // Steam cancels steam (not everything else)
+  if (first.type == ElementType.steam && second.type == ElementType.steam) {
     return const FusionResult(
       score: 0,
       countsForMana: false,
