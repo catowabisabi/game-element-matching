@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元素合成 Element Fusion</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Noto Sans TC', 'Orbitron', sans-serif;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #ff6600, #ffaa00, #ff6600);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 102, 0, 0.5);
+            letter-spacing: 4px;
+        }
+        
+        .stats-bar {
+            display: flex;
+            gap: 40px;
+            width: 100%;
+            justify-content: center;
+        }
+        
+        .stat-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 12px 24px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            color: #ffaa00;
+        }
+        
+        .stat-value.mana {
+            color: #00ccff;
+        }
+        
+        .stat-value.record {
+            color: #cc66ff;
+        }
+        
+        .grid-container {
+            position: relative;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 10px;
+            width: 420px;
+            height: 420px;
+        }
+        
+        .cell {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            position: relative;
+        }
+        
+        .tile {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: all 0.1s ease;
+            animation: appear 0.15s ease;
+        }
+        
+        @keyframes appear {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes merge {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+        
+        .tile.merged {
+            animation: merge 0.15s ease;
+        }
+        
+        /* 元素配色 */
+        .tile-fire-1 { background: linear-gradient(135deg, #ff4444, #cc3333); box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4); }
+        .tile-fire-2 { background: linear-gradient(135deg, #ff6b6b, #dd4444); box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4); }
+        .tile-fire-3 { background: linear-gradient(135deg, #ff8e8e, #ee5555); box-shadow: 0 4px 15px rgba(255, 142, 142, 0.4); }
+        .tile-fire-4 { background: linear-gradient(135deg, #ffaaaa, #dd6666); box-shadow: 0 4px 20px rgba(255, 170, 170, 0.5); }
+        
+        .tile-water-1 { background: linear-gradient(135deg, #4488ff, #2266dd); box-shadow: 0 4px 15px rgba(68, 136, 255, 0.4); }
+        .tile-water-2 { background: linear-gradient(135deg, #6ba3ff, #4488ee); box-shadow: 0 4px 15px rgba(107, 163, 255, 0.4); }
+        .tile-water-3 { background: linear-gradient(135deg, #8ebeff, #66a3ff); box-shadow: 0 4px 15px rgba(142, 190, 255, 0.4); }
+        .tile-water-4 { background: linear-gradient(135deg, #aaddff, #88bbff); box-shadow: 0 4px 20px rgba(170, 221, 255, 0.5); }
+        
+        .tile-earth-1 { background: linear-gradient(135deg, #8b5a2b, #6b4423); box-shadow: 0 4px 15px rgba(139, 90, 43, 0.4); }
+        .tile-earth-2 { background: linear-gradient(135deg, #a06832, #805028); box-shadow: 0 4px 15px rgba(160, 104, 50, 0.4); }
+        .tile-earth-3 { background: linear-gradient(135deg, #b87639, #986030); box-shadow: 0 4px 15px rgba(184, 118, 57, 0.4); }
+        .tile-earth-4 { background: linear-gradient(135deg, #cc8844, #aa7050); box-shadow: 0 4px 20px rgba(204, 136, 68, 0.5); }
+        
+        .tile-plant { background: linear-gradient(135deg, #44cc44, #22aa22); box-shadow: 0 4px 15px rgba(68, 204, 68, 0.4); }
+        
+        .tile-lava { background: linear-gradient(135deg, #ff6600, #cc4400); box-shadow: 0 4px 20px rgba(255, 102, 0, 0.5); }
+        
+        .tile-steam { background: linear-gradient(135deg, #cccccc, #aaaaaa); color: #333; box-shadow: 0 4px 10px rgba(200, 200, 200, 0.3); }
+        
+        .tile-stone { background: linear-gradient(135deg, #555555, #333333); box-shadow: 0 4px 15px rgba(85, 85, 85, 0.4); border: 2px solid #666; }
+        
+        .tile-sage { background: linear-gradient(135deg, #9933ff, #6622cc); box-shadow: 0 4px 25px rgba(153, 51, 255, 0.6); animation: sageAppear 0.3s ease; }
+        
+        @keyframes sageAppear {
+            0% { transform: scale(0) rotate(0deg); }
+            50% { transform: scale(1.3) rotate(10deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+        
+        .tile-element {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .tile-level {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.4rem;
+        }
+        
+        .tile-sage .tile-element {
+            font-size: 0.7rem;
+            color: #ffcc00;
+        }
+        
+        .tile-sage .tile-level {
+            font-size: 1.8rem;
+            color: #fff;
+        }
+        
+        .controls {
+            margin-top: 10px;
+            text-align: center;
+            color: #666;
+            font-size: 0.8rem;
+        }
+        
+        .controls kbd {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 0 4px;
+            color: #888;
+        }
+        
+        .message-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .message-overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .message-overlay h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+        
+        .message-overlay.win h2 {
+            color: #9933ff;
+            text-shadow: 0 0 20px rgba(153, 51, 255, 0.5);
+        }
+        
+        .message-overlay.lose h2 {
+            color: #ff4444;
+            text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+        }
+        
+        .message-overlay p {
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .restart-btn {
+            background: linear-gradient(135deg, #ff6600, #cc4400);
+            border: none;
+            color: #fff;
+            padding: 12px 30px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Noto Sans TC', sans-serif;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .restart-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 102, 0, 0.4);
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 450px;
+            margin-top: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: #666;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>ELEMENT FUSION</h1>
+        
+        <div class="stats-bar">
+            <div class="stat-box">
+                <div class="stat-label">分數</div>
+                <div class="stat-value" id="score">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">法力值</div>
+                <div class="stat-value mana" id="mana">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">最高紀錄</div>
+                <div class="stat-value record" id="record">0</div>
+            </div>
+        </div>
+        
+        <div class="grid-container">
+            <div class="grid" id="grid">
+                <!-- 網格單元格 -->
+            </div>
+            <div class="message-overlay" id="message">
+                <h2 id="message-title">遊戲結束</h2>
+                <p id="message-text">最終分數: 0</p>
+                <button class="restart-btn" onclick="restartGame()">重新開始</button>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background:#ff4444"></div>火</div>
+            <div class="legend-item"><div class="legend-color" style="background:#4488ff"></div>水</div>
+            <div class="legend-item"><div class="legend-color" style="background:#8b5a2b"></div>土</div>
+            <div class="legend-item"><div class="legend-color" style="background:#44cc44"></div>植物</div>
+            <div class="legend-item"><div class="legend-color" style="background:#ff6600"></div>岩漿</div>
+            <div class="legend-item"><div class="legend-color" style="background:#aaa"></div>蒸氣</div>
+            <div class="legend-item"><div class="legend-color" style="background:#555"></div>石頭</div>
+            <div class="legend-item"><div class="legend-color" style="background:#9933ff"></div>賢者之石</div>
+        </div>
+        
+        <div class="controls">
+            <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 或 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動 
+            <kbd>Space</kbd> 法力技能 
+            <kbd>R</kbd> 重新開始
+        </div>
+    </div>
+    
+    <script>
+        // ============================================
+        // 元素合成 (Element Fusion) 遊戲核心邏輯
+        // ============================================
+        
+        // 遊戲狀態
+        let grid = [];           // 4x4 網格
+        let score = 0;           // 當前分數
+        let mana = 0;            // 法力值
+        let record = 0;          // 最高紀錄
+        let moveCount = 0;       // 移動次數（用於石頭生成）
+        let gameOver = false;     // 遊戲結束標誌
+        let won = false;         // 勝利標誌
+        
+        // 常量定義
+        const GRID_SIZE = 4;
+        const STONE_INTERVAL = 10;  // 每10次移動生成石頭
+        const MANA_COST = 3;        // 法力技能消耗
+        
+        // 元素類型枚舉
+        const ElementType = {
+            NONE: 0,
+            FIRE: 1,
+            WATER: 2,
+            EARTH: 3,
+            PLANT: 4,
+            LAVA: 5,
+            STEAM: 6,
+            STONE: 7,
+            SAGE: 8  // 賢者之石 - 勝利目標
+        };
+        
+        // 元素名稱映射（用於顯示）
+        const elementNames = {
+            [ElementType.FIRE]: '火',
+            [ElementType.WATER]: '水',
+            [ElementType.EARTH]: '土',
+            [ElementType.PLANT]: '植物',
+            [ElementType.LAVA]: '岩漿',
+            [ElementType.STEAM]: '蒸氣',
+            [ElementType.STONE]: '石頭',
+            [ElementType.SAGE]: '賢者之石'
+        };
+        
+        // 初始化網格 DOM
+        function initGrid() {
+            const gridEl = document.getElementById('grid');
+            gridEl.innerHTML = '';
+            
+            // 創建16個網格單元格
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.index = i;
+                gridEl.appendChild(cell);
+            }
+        }
+        
+        // 初始化遊戲
+        function initGame() {
+            // 初始化空網格
+            grid = Array(GRID_SIZE * GRID_SIZE).fill(null);
+            
+            // 重置遊戲狀態
+            score = 0;
+            mana = 0;
+            moveCount = 0;
+            gameOver = false;
+            won = false;
+            
+            // 載入最高紀錄
+            const savedRecord = localStorage.getElement('elementFusionRecord');
+            if (savedRecord) {
+                record = parseInt(savedRecord);
+            }
+            
+            // 隱藏遊戲結束畫面
+            document.getElementById('message').classList.remove('show');
+            
+            // 生成初始方塊
+            spawnTile();
+            spawnTile();
+            
+            // 渲染網格
+            renderGrid();
+            updateStats();
+        }
+        
+        // --------------------------------------------------------
+        // 核心合成邏輯函式 - 判定兩個方塊合併後的結果
+        // --------------------------------------------------------
+        /**
+         * 合成判斷函式 - 這是遊戲最核心的邏輯
+         * 
+         * 判定優先級：
+         * 1. 賢者之石：勝利條件，單一元素
+         * 2. 同元素進化：火+火、水+水、土+土 -> 等級+1
+         * 3. 跨元素反應：火+土=岩漿，水+土=植物，火+水=蒸氣
+         * 
+         * @param {number} type1 - 第一個元素的類型
+         * @param {number} level1 - 第一個元素的等級
+         * @param {number} type2 - 第二個元素的類型
+         * @param {number} level2 - 第二個元素的等級
+         * @returns {Object} - 合併結果 {type, level, score, removeBoth}
+         */
+        function getFusionResult(type1, level1, type2, level2) {
+            // 賢者之石 - 最高等級，獲勝！
+            if (type1 === ElementType.SAGE || type2 === ElementType.SAGE) {
+                return { type: ElementType.SAGE, level: 1, score: 10000, removeBoth: false };
+            }
+            
+            // ====== 同元素進化 ======
+            // 等級 N 火 + 等級 N 火 = 等級 N+1 火
+            // 等級 N 水 + 等級 N 水 = 等級 N+1 水
+            // 等級 N 土 + 等級 N 土 = 等級 N+1 土
+            
+            if (type1 === type2 && type1 !== ElementType.NONE && 
+                type1 !== ElementType.PLANT && type1 !== ElementType.LAVA && 
+                type1 !== ElementType.STEAM && type1 !== ElementType.STONE &&
+                type1 !== ElementType.SAGE) {
+                
+                const newLevel = Math.min(level1 + 1, 4); // 最多4級
+                const baseScore = [0, 10, 30, 70, 150][newLevel];
+                
+                // ====== 賢者之石勝利條件 ======
+                // 等級4的火/水/土進化時，有機會生成賢者之石
+                if (newLevel === 4 && Math.random() < 0.3) {
+                    return {
+                        type: ElementType.SAGE,
+                        level: 1,
+                        score: 5000,
+                        removeBoth: false
+                    };
+                }
+                
+                return {
+                    type: type1,
+                    level: newLevel,
+                    score: baseScore,
+                    removeBoth: false
+                };
+            }
+            
+            // ====== 跨元素反應 ======
+            
+            // 火 + 土 = 岩漿 (Lava) - 高分方塊
+            if ((type1 === ElementType.FIRE && type2 === ElementType.EARTH) ||
+                (type1 === ElementType.EARTH && type2 === ElementType.FIRE)) {
+                return { type: ElementType.LAVA, level: 1, score: 100, removeBoth: false };
+            }
+            
+            // 水 + 土 = 植物 (Plant) - 高分方塊
+            if ((type1 === ElementType.WATER && type2 === ElementType.EARTH) ||
+                (type1 === ElementType.EARTH && type2 === ElementType.WATER)) {
+                return { type: ElementType.PLANT, level: 1, score: 100, removeBoth: false };
+            }
+            
+            // 火 + 水 = 蒸氣 (Steam) - 特殊反應，兩個方塊同時消失，不給分
+            if ((type1 === ElementType.FIRE && type2 === ElementType.WATER) ||
+                (type1 === ElementType.WATER && type2 === ElementType.FIRE)) {
+                return { type: ElementType.STEAM, level: 1, score: 0, removeBoth: true };
+            }
+            
+            // 岩漿 + 水 = 蒸氣（額外反應）
+            if ((type1 === ElementType.LAVA && type2 === ElementType.WATER) ||
+                (type1 === ElementType.WATER && type2 === ElementType.LAVA)) {
+                return { type: ElementType.STEAM, level: 1, score: 0, removeBoth: true };
+            }
+            
+            // 岩漿 + 火 = 更強岩漿
+            if ((type1 === ElementType.LAVA && type2 === ElementType.FIRE) ||
+                (type1 === ElementType.FIRE && type2 === ElementType.LAVA)) {
+                return { type: ElementType.LAVA, level: 2, score: 200, removeBoth: false };
+            }
+            
+            // 植物 + 火 = 岩漿
+            if ((type1 === ElementType.PLANT && type2 === ElementType.FIRE) ||
+                (type1 === ElementType.FIRE && type2 === ElementType.PLANT)) {
+                return { type: ElementType.LAVA, level: 1, score: 150, removeBoth: false };
+            }
+            
+            // 植物 + 水 = 更大植物（但有上限）
+            if ((type1 === ElementType.PLANT && type2 === ElementType.WATER) ||
+                (type1 === ElementType.WATER && type2 === ElementType.PLANT)) {
+                return { type: ElementType.PLANT, level: 2, score: 200, removeBoth: false };
+            }
+            
+            // 蒸氣 + 任何東西 = 蒸氣（消失）
+            if (type1 === ElementType.STEAM || type2 === ElementType.STEAM) {
+                return { type: ElementType.STEAM, level: 1, score: 0, removeBoth: true };
+            }
+            
+            // 石頭無法參與合成
+            if (type1 === ElementType.STONE || type2 === ElementType.STONE) {
+                return null; // 無法合併
+            }
+            
+            // 無法合併
+            return null;
+        }
+        
+        // 獲取tile對象
+        function getTile(index) {
+            if (index < 0 || index >= GRID_SIZE * GRID_SIZE) return null;
+            return grid[index];
+        }
+        
+        // 設置tile
+        function setTile(index, tile) {
+            if (index >= 0 && index < GRID_SIZE * GRID_SIZE) {
+                grid[index] = tile;
+            }
+        }
+        
+        // 生成隨機新方塊
+        function spawnTile() {
+            const emptyIndices = [];
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                if (!grid[i]) emptyIndices.push(i);
+            }
+            
+            if (emptyIndices.length === 0) return false;
+            
+            const randomIndex = emptyIndices[Math.floor(Math.random() * emptyIndices.length)];
+            
+            // 隨機選擇元素類型和等級
+            const rand = Math.random();
+            let type, level;
+            
+            if (rand < 0.4) {
+                type = ElementType.FIRE;
+                level = 1;
+            } else if (rand < 0.7) {
+                type = ElementType.WATER;
+                level = 1;
+            } else {
+                type = ElementType.EARTH;
+                level = 1;
+            }
+            
+            grid[randomIndex] = { type, level };
+            return true;
+        }
+        
+        // 生成石頭障礙物
+        function spawnStone() {
+            const emptyIndices = [];
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                if (!grid[i]) emptyIndices.push(i);
+            }
+            
+            if (emptyIndices.length === 0) return false;
+            
+            const randomIndex = emptyIndices[Math.floor(Math.random() * emptyIndices.length)];
+            grid[randomIndex] = { type: ElementType.STONE, level: 0 };
+            
+            return true;
+        }
+        
+        // 獲取座標索引
+        function getCoords(index) {
+            return { row: Math.floor(index / GRID_SIZE), col: index % GRID_SIZE };
+        }
+        
+        // 從座標獲取索引
+        function getIndex(row, col) {
+            return row * GRID_SIZE + col;
+        }
+        
+        // 移動方塊並處理合併
+        function move(direction) {
+            if (gameOver) return false;
+            
+            let merged = false;
+            let chainMerge = 0;  // 連鎖合併計數
+            let pointsGained = 0;
+            
+            // 根據方向設置遍歷順序
+            const rowStart = direction === 'down' ? GRID_SIZE - 1 : 0;
+            const rowEnd = direction === 'down' ? -1 : GRID_SIZE;
+            const rowStep = direction === 'down' ? -1 : 1;
+            
+            const colStart = direction === 'right' ? GRID_SIZE - 1 : 0;
+            const colEnd = direction === 'right' ? -1 : GRID_SIZE;
+            const colStep = direction === 'right' ? -1 : 1;
+            
+            // 創建移動映射
+            const positions = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    positions.push({ row: r, col: c });
+                }
+            }
+            
+            // 根據方向排序位置
+            positions.sort((a, b) => {
+                if (direction === 'left') return a.col - b.col;
+                if (direction === 'right') return b.col - a.col;
+                if (direction === 'up') return a.row - b.row;
+                if (direction === 'down') return b.row - a.row;
+                return 0;
+            });
+            
+            // 創建新的網格副本
+            const newGrid = Array(GRID_SIZE * GRID_SIZE).fill(null);
+            const occupied = new Array(GRID_SIZE * GRID_SIZE).fill(false);
+            
+            // 處理每個位置
+            for (const pos of positions) {
+                const fromIndex = getIndex(pos.row, pos.col);
+                const tile = grid[fromIndex];
+                
+                if (!tile || tile.type === ElementType.STONE) {
+                    // 石頭直接保留
+                    if (tile && tile.type === ElementType.STONE) {
+                        newGrid[fromIndex] = tile;
+                        occupied[fromIndex] = true;
+                    }
+                    continue;
+                }
+                
+                // 計算目標位置
+                let targetRow = pos.row;
+                let targetCol = pos.col;
+                
+                // 向指定方向滑動
+                const dRow = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
+                const dCol = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
+                
+                while (true) {
+                    const nextRow = targetRow + dRow;
+                    const nextCol = targetCol + dCol;
+                    
+                    // 邊界檢查
+                    if (nextRow < 0 || nextRow >= GRID_SIZE || nextCol < 0 || nextCol >= GRID_SIZE) {
+                        break;
+                    }
+                    
+                    const nextIndex = getIndex(nextRow, nextCol);
+                    
+                    // 檢查下一個位置是否有障礙
+                    if (occupied[nextIndex]) {
+                        break;
+                    }
+                    
+                    targetRow = nextRow;
+                    targetCol = nextCol;
+                }
+                
+                const targetIndex = getIndex(targetRow, targetCol);
+                
+                // 檢查是否可以合併
+                if (!occupied[targetIndex]) {
+                    // 空白位置，直接移動
+                    newGrid[targetIndex] = tile;
+                    occupied[targetIndex] = true;
+                    
+                    if (targetIndex !== fromIndex) {
+                        merged = true;
+                    }
+                } else {
+                    // 嘗試合併
+                    const existingTile = newGrid[targetIndex];
+                    const result = getFusionResult(
+                        existingTile.type, existingTile.level,
+                        tile.type, tile.level
+                    );
+                    
+                    if (result) {
+                        // 合併成功
+                        newGrid[targetIndex] = { 
+                            type: result.type, 
+                            level: result.level,
+                            merged: true
+                        };
+                        
+                        if (!result.removeBoth) {
+                            pointsGained += result.score;
+                            chainMerge++;
+                            
+                            // 檢查是否生成賢者之石（勝利）
+                            if (result.type === ElementType.SAGE) {
+                                won = true;
+                                gameOver = true;
+                            }
+                        }
+                        
+                        merged = true;
+                    } else {
+                        // 無法合併，放在原來的位置
+                        const originalIndex = getIndex(pos.row, pos.col);
+                        newGrid[originalIndex] = tile;
+                        occupied[originalIndex] = true;
+                    }
+                }
+            }
+            
+            if (!merged) return false;
+            
+            // 更新網格
+            grid = newGrid;
+            
+            // 更新分數
+            score += pointsGained;
+            
+            // 連鎖合併獲得法力
+            if (chainMerge > 0) {
+                mana += chainMerge;
+            }
+            
+            // 增加移動計數
+            moveCount++;
+            
+            // 每10次移動生成石頭
+            if (moveCount % STONE_INTERVAL === 0) {
+                spawnStone();
+            }
+            
+            // 生成新方塊
+            spawnTile();
+            
+            // 渲染
+            renderGrid();
+            updateStats();
+            
+            // 檢查遊戲結束
+            if (!won) {
+                checkGameOver();
+            } else {
+                showWin();
+            }
+            
+            return true;
+        }
+        
+        // 檢查遊戲是否結束
+        function checkGameOver() {
+            // 檢查是否有空位
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                if (!grid[i]) return false;
+            }
+            
+            // 檢查是否可以合併
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const index = getIndex(row, col);
+                    const tile = grid[index];
+                    
+                    if (!tile) continue;
+                    
+                    // 檢查右側
+                    if (col < GRID_SIZE - 1) {
+                        const right = grid[getIndex(row, col + 1)];
+                        if (right && getFusionResult(tile.type, tile.level, right.type, right.level)) {
+                            return false;
+                        }
+                    }
+                    
+                    // 檢查下方
+                    if (row < GRID_SIZE - 1) {
+                        const down = grid[getIndex(row + 1, col)];
+                        if (down && getFusionResult(tile.type, tile.level, down.type, down.level)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            gameOver = true;
+            showGameOver();
+            return true;
+        }
+        
+        // 顯示勝利
+        function showWin() {
+            if (score > record) {
+                record = score;
+                localStorage.setElement('elementFusionRecord', record);
+            }
+            
+            const overlay = document.getElementById('message');
+            overlay.className = 'message-overlay show win';
+            document.getElementById('message-title').textContent = '🎉 勝利！';
+            document.getElementById('message-text').textContent = `恭喜你合成出賢者之石！\n最終分數: ${score}`;
+        }
+        
+        // 顯示遊戲結束
+        function showGameOver() {
+            if (score > record) {
+                record = score;
+                localStorage.setElement('elementFusionRecord', record);
+            }
+            
+            const overlay = document.getElementById('message');
+            overlay.className = 'message-overlay show lose';
+            document.getElementById('message-title').textContent = '遊戲結束';
+            document.getElementById('message-text').textContent = `最終分數: ${score}`;
+        }
+        
+        // 使用法力技能
+        function useManaSkill() {
+            if (gameOver) return;
+            if (mana < MANA_COST) return;
+            
+            mana -= MANA_COST;
+            
+            // 找到石頭和最低等級方塊
+            const stones = [];
+            const lowTiles = [];
+            
+            for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                if (grid[i]) {
+                    if (grid[i].type === ElementType.STONE) {
+                        stones.push(i);
+                    } else if (grid[i].level === 1) {
+                        lowTiles.push(i);
+                    }
+                }
+            }
+            
+            // 優先炸毀石頭
+            let targetIndex = -1;
+            if (stones.length > 0) {
+                targetIndex = stones[Math.floor(Math.random() * stones.length)];
+            } else if (lowTiles.length > 0) {
+                targetIndex = lowTiles[Math.floor(Math.random() * lowTiles.length)];
+            } else {
+                // 沒有，找到任何方塊
+                const allTiles = [];
+                for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+                    if (grid[i] && grid[i].type !== ElementType.SAGE) {
+                        allTiles.push(i);
+                    }
+                }
+                
+                if (allTiles.length > 0) {
+                    targetIndex = allTiles[Math.floor(Math.random() * allTiles.length)];
+                }
+            }
+            
+            if (targetIndex >= 0) {
+                grid[targetIndex] = null;
+                renderGrid();
+                updateStats();
+            }
+        }
+        
+        // 渲染網格
+        function renderGrid() {
+            const cells = document.querySelectorAll('.cell');
+            
+            cells.forEach((cell, index) => {
+                cell.innerHTML = '';
+                const tile = grid[index];
+                
+                if (tile) {
+                    const tileEl = document.createElement('div');
+                    
+                    // 構建CSS類名
+                    let className = 'tile';
+                    
+                    if (tile.type === ElementType.FIRE) {
+                        className += ` tile-fire-${tile.level}`;
+                    } else if (tile.type === ElementType.WATER) {
+                        className += ` tile-water-${tile.level}`;
+                    } else if (tile.type === ElementType.EARTH) {
+                        className += ` tile-earth-${tile.level}`;
+                    } else if (tile.type === ElementType.PLANT) {
+                        className += ' tile-plant';
+                    } else if (tile.type === ElementType.LAVA) {
+                        className += ' tile-lava';
+                    } else if (tile.type === ElementType.STEAM) {
+                        className += ' tile-steam';
+                    } else if (tile.type === ElementType.STONE) {
+                        className += ' tile-stone';
+                    } else if (tile.type === ElementType.SAGE) {
+                        className += ' tile-sage';
+                    }
+                    
+                    if (tile.merged) {
+                        className += ' merged';
+                    }
+                    
+                    tileEl.className = className;
+                    
+                    // 內容
+                    if (tile.type === ElementType.SAGE) {
+                        tileEl.innerHTML = `
+                            <span class="tile-element">賢者之石</span>
+                        `;
+                    } else if (tile.type >= ElementType.FIRE && tile.type <= ElementType.EARTH) {
+                        const elementName = elementNames[tile.type];
+                        const displayLevel = tile.level > 1 ? ` lv.${tile.level}` : '';
+                        tileEl.innerHTML = `
+                            <span class="tile-element">${elementName}</span>
+                            <span class="tile-level">${displayLevel}</span>
+                        `;
+                    } else {
+                        tileEl.innerHTML = `
+                            <span class="tile-element">${elementNames[tile.type]}</span>
+                        `;
+                    }
+                    
+                    cell.appendChild(tileEl);
+                }
+            });
+        }
+        
+        // 更新統計顯示
+        function updateStats() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('mana').textContent = mana;
+            document.getElementById('record').textContent = record;
+        }
+        
+        // 重新開始遊戲
+        function restartGame() {
+            initGame();
+        }
+        
+        // 鍵盤事件處理
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                restartGame();
+                return;
+            }
+            
+            if (e.key === ' ') {
+                e.preventDefault();
+                useManaSkill();
+                return;
+            }
+            
+            let direction = null;
+            
+            if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                direction = 'up';
+            } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+                direction = 'down';
+            } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                direction = 'left';
+            } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                direction = 'right';
+            }
+            
+            if (direction) {
+                e.preventDefault();
+                move(direction);
+            }
+        });
+        
+        // 初始化
+        initGrid();
+        initGame();
+    </script>
+</body>
+</html>

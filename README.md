@@ -1,16 +1,28 @@
-# tamagotchi_app
+# Elementary
 
-A new Flutter project.
+Elementary is a gesture-first Flutter puzzle game based on the original
+`element_fusion.html` prototype.
 
-## Getting Started
+## Core Game
 
-This project is a starting point for a Flutter application.
+- Swipe the 4x4 board to move elements.
+- Fire, water, and earth evolve through fusion.
+- Cross-element reactions create plant, lava, steam, stone obstacles, and the
+  philosopher's stone.
+- Long press the board to spend coins on a direction hint.
+- Double tap the board to use mana and clear a blocker or low-level tile.
+- Swipe up from the main game to visit the pet layer, then swipe down to return.
 
-A few resources to get you started if this is your first Flutter project:
+## Development Notes
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+This repository is now the `elementary` Flutter game. The source HTML prototype
+is kept in `docs/reference/`.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+When Flutter is available on the machine:
+
+```powershell
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
