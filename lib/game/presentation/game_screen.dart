@@ -313,7 +313,7 @@ class _TooltipPopupState extends State<TooltipPopup>
   }
 }
 
-enum _MainTab { game, pet, shop, settings }
+enum _MainTab { game, pet, shop, help, settings }
 
 class GameScreen extends StatefulWidget {
   const GameScreen({required this.store, super.key});
@@ -340,6 +340,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _seenTutorial = false;
   String? _activeTooltip;
   bool _showPetTooltips = false;
+  bool _selectingSpellTarget = false;
   int _hintCount = 0;
   int _manaCount = 0;
   int _feedCount = 0;
@@ -405,6 +406,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void _selectTab(_MainTab tab) {
     setState(() {
       _tab = tab;
+      _selectingSpellTarget = false;
       _showPet = tab == _MainTab.pet;
       if (_showPet && !_seenTutorial) {
         _showPetTooltips = true;
@@ -419,6 +421,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _move(Direction direction) async {
+    if (_selectingSpellTarget) {
+      setState(() {
+        _selectingSpellTarget = false;
+        _engine.snapshot = _game.copyWith(lastMessage: '已取消施法選取');
+      });
+      return;
+    }
+
     final beforeGameOver = _game.gameOver || _game.won;
     final result = _engine.move(direction);
     if (!result) {
@@ -449,17 +459,39 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   void _restart() {
-    setState(() => _engine.restart());
+    setState(() {
+      _selectingSpellTarget = false;
+      _engine.restart();
+    });
     _save();
   }
 
   void _useManaSkill() {
-    final result = _engine.useManaSkill();
-    if (result && _manaCount == 0) {
-      _manaCount = 1;
-      _activeTooltip = '法力技能消耗3法力移除最低級元素';
+    if (_game.gameOver || _game.won || _game.mana < manaCost) {
+      _engine.useManaSkill();
+      setState(() {});
+      return;
     }
-    setState(() {});
+
+    setState(() {
+      _selectingSpellTarget = !_selectingSpellTarget;
+      _engine.snapshot = _game.copyWith(
+        lastMessage:
+            _selectingSpellTarget ? '選一個元素，用 $manaCost 法力清除' : '已取消施法選取',
+      );
+    });
+  }
+
+  void _castManaSkillAt(int index) {
+    final result = _engine.useManaSkillAt(index);
+    if (result) {
+      _audio.playLevelUp();
+      if (_manaCount == 0) {
+        _manaCount = 1;
+        _activeTooltip = '法術現在可以指定目標，先按法術再點元素';
+      }
+    }
+    setState(() => _selectingSpellTarget = false);
     _save();
   }
 
@@ -507,6 +539,33 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _petAnimKey.currentState?.triggerEvolveAnimation();
       });
     }
+  }
+
+  void _patPet() {
+    setState(() {
+      _pet = _pet.pat();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 很開心');
+    });
+    _petAnimKey.currentState?.triggerHappyAnimation();
+    _save();
+  }
+
+  void _playWithPet() {
+    setState(() {
+      _pet = _pet.play();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 跟你玩了一會');
+    });
+    _petAnimKey.currentState?.triggerHappyAnimation();
+    _save();
+  }
+
+  void _restPet() {
+    setState(() {
+      _pet = _pet.rest();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 休息好了');
+    });
+    _petAnimKey.currentState?.triggerEatAnimation();
+    _save();
   }
 
   void _showShop() {
@@ -694,6 +753,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             label: 'Shop',
           ),
           NavigationDestination(
+            icon: Icon(Icons.menu_book_rounded),
+            label: 'Help',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.settings_rounded),
             label: 'Settings',
           ),
@@ -708,6 +771,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _MainTab.game => _gameLayer(),
       _MainTab.pet => _petLayer(),
       _MainTab.shop => _shopPage(),
+      _MainTab.help => _helpPage(),
       _MainTab.settings => _settingsPage(),
     };
   }
@@ -785,12 +849,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       child: Row(
         children: [
           const Expanded(
-            child: Text(
-              'Elementary',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                color: Color(0xffffb452),
+            child: FittedBox(
+              alignment: Alignment.centerLeft,
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'Elementary',
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xffffb452),
+                ),
               ),
             ),
           ),
@@ -798,13 +867,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           const SizedBox(width: 4),
           _iconAction(Icons.refresh_rounded, _restart),
           const SizedBox(width: 4),
-          FloatingActionButton.small(
-            onPressed: () => _selectTab(_MainTab.pet),
-            backgroundColor: const Color(0xff6fe08b).withOpacity(0.9),
-            foregroundColor: Colors.white,
-            tooltip: '查看寵物',
-            child: const Icon(Icons.pets_rounded),
-          ),
+          _iconAction(Icons.pets_rounded, () => _selectTab(_MainTab.pet)),
         ],
       ),
     );
@@ -881,7 +944,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         const boardPadding = 10.0;
         final boardSize = math.max(0.0, outerBoardSize - boardPadding * 2);
         // Calculate cell size based on 4x4 grid with 10px spacing
-        final totalSpacing = 10 * (gridSize - 1); // 30
+        const totalSpacing = 10 * (gridSize - 1); // 30
         _cellSize = (boardSize - totalSpacing) / gridSize;
         _spacing = 10;
 
@@ -939,6 +1002,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           child: SizedBox.square(
             dimension: boardSize,
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 // Background grid
                 GridView.builder(
@@ -967,10 +1031,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         : Curves.easeOutCubic,
                     left: col * (_cellSize + _spacing),
                     top: row * (_cellSize + _spacing),
-                    child: _TileCell(
-                      tile: animatedTile.tile,
-                      highlighted: _isHintEdge(animatedTile.targetIndex),
-                      cellSize: _cellSize,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _selectingSpellTarget
+                          ? () => _castManaSkillAt(animatedTile.targetIndex)
+                          : null,
+                      child: _TileCell(
+                        tile: animatedTile.tile,
+                        highlighted: _isHintEdge(animatedTile.targetIndex),
+                        selectable: _selectingSpellTarget &&
+                            animatedTile.tile.type != ElementType.sage,
+                        cellSize: _cellSize,
+                      ),
                     ),
                   );
                 }),
@@ -1181,7 +1253,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               emoji: '🎲',
               name: 'Reroll',
               price: 25,
-              desc: 'Turns one tile into level 1.',
+              desc: 'Changes one tile type and keeps its level.',
               enabled: _game.coins >= 25,
               onTap: () => _buyShopItem(_ShopItem.reroll),
             ),
@@ -1210,6 +1282,96 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _helpPage() {
+    return SingleChildScrollView(
+      key: const ValueKey('help'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pageHeader(
+            icon: Icons.menu_book_rounded,
+            title: 'How to play',
+            subtitle: 'Move elements, learn reactions, and care for your pet.',
+          ),
+          const SizedBox(height: 16),
+          _settingsPanel(
+            title: 'Controls',
+            children: [
+              _helpTile(
+                Icons.swipe_rounded,
+                'Swipe the board',
+                'Swipe up, down, left, or right to slide all elements.',
+              ),
+              _helpTile(
+                Icons.auto_fix_high_rounded,
+                'Targeted spell',
+                'Double tap the board, then tap the exact tile you want to remove.',
+              ),
+              _helpTile(
+                Icons.pets_rounded,
+                'Pet interaction',
+                'Open Pet and tap, feed, play, or rest to change mood and growth.',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Fusion guide',
+            children: [
+              _fusionRow('Fire + Fire', 'Fire Lv.2, then Lv.3, Lv.4'),
+              _fusionRow('Water + Water', 'Water levels up'),
+              _fusionRow('Earth + Earth', 'Earth levels up'),
+              _fusionRow('Fire + Earth', 'Lava'),
+              _fusionRow('Water + Earth', 'Plant'),
+              _fusionRow('Fire + Water', 'Both clear in a steam reaction'),
+              _fusionRow('Plant + Water', 'Plant levels up'),
+              _fusionRow('Plant + Fire', 'Lava'),
+              _fusionRow('Lava + Fire', 'Lava levels up'),
+              _fusionRow('Lava + Water', 'Both clear'),
+              _fusionRow('Steam + anything', 'Both clear'),
+              _fusionRow('Stone', 'Blocks a lane until spell removes it'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Shop notes',
+            children: [
+              _helpTile(
+                Icons.casino_rounded,
+                'Reroll keeps level',
+                'Reroll changes an element type but keeps its current level.',
+              ),
+              _helpTile(
+                Icons.shopping_bag_rounded,
+                'Demo premium items',
+                'Real-money style packs are local demo purchases for future billing integration.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpTile(IconData icon, String title, String body) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(body),
+    );
+  }
+
+  Widget _fusionRow(String source, String result) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.merge_type_rounded),
+      title: Text(source),
+      trailing: const Icon(Icons.arrow_forward_rounded, size: 18),
+      subtitle: Text(result),
     );
   }
 
@@ -1526,55 +1688,59 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _PetAnimationWidget(
-                        key: _petAnimKey,
-                        onEatTriggered: () {
-                          _audio.playEat();
-                        },
-                        onHappyTriggered: () {
-                          _audio.playWin();
-                        },
-                        onEvolveTriggered: () {
-                          _audio.playLevelUp();
-                        },
-                        child: TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.92, end: 1),
-                          duration: const Duration(milliseconds: 700),
-                          curve: Curves.elasticOut,
-                          builder: (context, scale, child) {
-                            return Transform.scale(scale: scale, child: child);
+                      GestureDetector(
+                        onTap: _patPet,
+                        child: _PetAnimationWidget(
+                          key: _petAnimKey,
+                          onEatTriggered: () {
+                            _audio.playEat();
                           },
-                          child: Container(
-                            width: 180,
-                            height: 180,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(
-                                colors: [
-                                  petColor.withOpacity(0.96),
-                                  petColor.withOpacity(0.52),
-                                  Colors.black.withOpacity(0.16),
+                          onHappyTriggered: () {
+                            _audio.playWin();
+                          },
+                          onEvolveTriggered: () {
+                            _audio.playLevelUp();
+                          },
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0.92, end: 1),
+                            duration: const Duration(milliseconds: 700),
+                            curve: Curves.elasticOut,
+                            builder: (context, scale, child) {
+                              return Transform.scale(
+                                  scale: scale, child: child);
+                            },
+                            child: Container(
+                              width: 180,
+                              height: 180,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    petColor.withOpacity(0.96),
+                                    petColor.withOpacity(0.52),
+                                    Colors.black.withOpacity(0.16),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.24),
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: petColor.withOpacity(0.38),
+                                    blurRadius: 32,
+                                    spreadRadius: 4,
+                                  ),
                                 ],
                               ),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.24),
-                                width: 3,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: petColor.withOpacity(0.38),
-                                  blurRadius: 32,
-                                  spreadRadius: 4,
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                _pet.affinity.shortLabel,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.w900,
+                              child: Center(
+                                child: Text(
+                                  _pet.affinity.shortLabel,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 64,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1608,13 +1774,27 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       _petMeter('進化', _pet.evolutionProgress,
                           const Color(0xffc991ff)),
                       const SizedBox(height: 28),
-                      Text(
-                        '長按或雙擊餵食  ·  5 金幣',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.44),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _feedPet,
+                            icon: const Icon(Icons.restaurant_rounded),
+                            label: const Text('Feed'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _playWithPet,
+                            icon: const Icon(Icons.toys_rounded),
+                            label: const Text('Play'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _restPet,
+                            icon: const Icon(Icons.bedtime_rounded),
+                            label: const Text('Rest'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1972,11 +2152,13 @@ class _TileCell extends StatelessWidget {
   const _TileCell({
     required this.tile,
     required this.highlighted,
+    required this.selectable,
     required this.cellSize,
   });
 
   final Tile? tile;
   final bool highlighted;
+  final bool selectable;
   final double cellSize;
 
   @override
@@ -1996,7 +2178,7 @@ class _TileCell extends StatelessWidget {
       child: TweenAnimationBuilder<double>(
         tween: Tween(
           begin: tile.justSpawned ? 0.0 : (tile.justMerged ? 0.8 : 1.0),
-          end: tile.justMerged ? 1.05 : 1.0,
+          end: tile.justMerged ? 1.02 : 1.0,
         ),
         duration: Duration(milliseconds: tile.justSpawned ? 300 : 180),
         curve: tile.justSpawned ? Curves.easeOutBack : Curves.easeOutBack,
@@ -2015,11 +2197,13 @@ class _TileCell extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: highlighted
-                  ? const Color(0xffffe1a6)
-                  : Colors.white.withOpacity(
-                      tile.type == ElementType.stone ? 0.18 : 0.08),
-              width: highlighted ? 2 : 1,
+              color: selectable
+                  ? const Color(0xff65d6ff)
+                  : highlighted
+                      ? const Color(0xffffe1a6)
+                      : Colors.white.withOpacity(
+                          tile.type == ElementType.stone ? 0.18 : 0.08),
+              width: selectable || highlighted ? 2 : 1,
             ),
             boxShadow: [
               BoxShadow(
@@ -2027,7 +2211,7 @@ class _TileCell extends StatelessWidget {
                 blurRadius: tile.justMerged
                     ? 24
                     : (tile.type == ElementType.sage ? 22 : 12),
-                spreadRadius: tile.justMerged ? 8 : 0,
+                spreadRadius: tile.justMerged ? 3 : 0,
                 offset: const Offset(0, 5),
               ),
             ],
@@ -2071,7 +2255,10 @@ class _TileCell extends StatelessWidget {
     return SizedBox(
       width: cellSize,
       height: cellSize,
-      child: tileWidget,
+      child: Padding(
+        padding: const EdgeInsets.all(1),
+        child: tileWidget,
+      ),
     );
   }
 }

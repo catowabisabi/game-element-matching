@@ -62,6 +62,25 @@ void main() {
     expect(engine.snapshot.mana, 0);
   });
 
+  test('targeted mana skill removes selected tile', () {
+    final engine = GameEngine(
+      initialSnapshot: _snapshot(
+        [
+          Tile(type: ElementType.fire),
+          Tile(type: ElementType.water),
+          null,
+          null,
+        ],
+        mana: manaCost,
+      ),
+    );
+
+    expect(engine.useManaSkillAt(1), isTrue);
+    expect(engine.snapshot.grid[0], isNotNull);
+    expect(engine.snapshot.grid[1], isNull);
+    expect(engine.snapshot.mana, 0);
+  });
+
   test('buy hint spends coins and chooses a direction', () {
     final engine = GameEngine(
       initialSnapshot: _snapshot(
@@ -78,6 +97,25 @@ void main() {
     expect(engine.buyHint(), isTrue);
     expect(engine.snapshot.coins, 10);
     expect(engine.snapshot.hintDirection, isNotNull);
+  });
+
+  test('reroll keeps the selected tile level', () {
+    final engine = GameEngine(
+      random: Random(1),
+      initialSnapshot: _snapshot(
+        [
+          Tile(type: ElementType.fire, level: 3),
+          null,
+          null,
+          null,
+        ],
+        coins: 25,
+      ),
+    );
+
+    expect(engine.buyReroll(), isTrue);
+    expect(engine.snapshot.grid[0]!.level, 3);
+    expect(engine.snapshot.coins, 0);
   });
 }
 

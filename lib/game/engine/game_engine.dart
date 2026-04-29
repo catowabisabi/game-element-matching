@@ -125,6 +125,32 @@ class GameEngine {
     return true;
   }
 
+  bool useManaSkillAt(int index) {
+    if (snapshot.gameOver || snapshot.won || snapshot.mana < manaCost) {
+      snapshot = snapshot.copyWith(lastMessage: '法力不足');
+      return false;
+    }
+    if (index < 0 || index >= snapshot.grid.length) {
+      snapshot = snapshot.copyWith(lastMessage: '這裡沒有可清除的元素');
+      return false;
+    }
+
+    final targetTile = snapshot.grid[index];
+    if (targetTile == null || targetTile.type == ElementType.sage) {
+      snapshot = snapshot.copyWith(lastMessage: '這裡沒有可清除的元素');
+      return false;
+    }
+
+    final grid = List<Tile?>.from(snapshot.grid);
+    grid[index] = null;
+    snapshot = snapshot.copyWith(
+      grid: grid,
+      mana: snapshot.mana - manaCost,
+      lastMessage: '法術清除了${targetTile.type.label}',
+    );
+    return true;
+  }
+
   bool buyHint() {
     const hintCost = 10;
     if (snapshot.coins < hintCost) {
@@ -201,16 +227,17 @@ class GameEngine {
       ElementType.earth,
       ElementType.plant
     ];
+    final previous = grid[target]!;
     grid[target] = Tile(
       type: types[_random.nextInt(types.length)],
-      level: 1,
+      level: max(1, previous.level),
       justSpawned: true,
     );
 
     snapshot = snapshot.copyWith(
       grid: grid,
       coins: snapshot.coins - rerollCost,
-      lastMessage: '重骰了一個元素',
+      lastMessage: '重骰了一個元素，等級保留',
     );
     return true;
   }
