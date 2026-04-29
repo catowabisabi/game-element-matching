@@ -70,7 +70,13 @@ class LocalStore {
     if (raw == null) {
       return null;
     }
-    return GameSnapshot.fromJson(Map<String, Object?>.from(jsonDecode(raw) as Map));
+    try {
+      return GameSnapshot.fromJson(
+          Map<String, Object?>.from(jsonDecode(raw) as Map));
+    } catch (_) {
+      await prefs.remove(_gameKey);
+      return null;
+    }
   }
 
   Future<void> saveGame(GameSnapshot snapshot) async {
@@ -84,7 +90,13 @@ class LocalStore {
     if (raw == null) {
       return PetState.initial();
     }
-    return PetState.fromJson(Map<String, Object?>.from(jsonDecode(raw) as Map));
+    try {
+      return PetState.fromJson(
+          Map<String, Object?>.from(jsonDecode(raw) as Map));
+    } catch (_) {
+      await prefs.remove(_petKey);
+      return PetState.initial();
+    }
   }
 
   Future<void> savePet(PetState pet) async {

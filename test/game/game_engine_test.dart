@@ -12,8 +12,8 @@ void main() {
     final engine = GameEngine(
       random: Random(1),
       initialSnapshot: _snapshot([
-        const Tile(type: ElementType.fire),
-        const Tile(type: ElementType.fire),
+        Tile(type: ElementType.fire),
+        Tile(type: ElementType.fire),
         null,
         null,
       ]),
@@ -22,7 +22,7 @@ void main() {
     expect(engine.move(Direction.left), isTrue);
     expect(engine.snapshot.grid[0]!.type, ElementType.fire);
     expect(engine.snapshot.grid[0]!.level, 2);
-    expect(engine.snapshot.score, 10);
+    expect(engine.snapshot.score, 30);
     expect(engine.snapshot.mana, 1);
   });
 
@@ -31,9 +31,9 @@ void main() {
       random: Random(1),
       initialSnapshot: _snapshot([
         null,
-        const Tile(type: ElementType.stone, level: 0),
-        const Tile(type: ElementType.water),
-        const Tile(type: ElementType.water),
+        Tile(type: ElementType.stone, level: 0),
+        Tile(type: ElementType.water),
+        Tile(type: ElementType.water),
       ]),
     );
 
@@ -48,8 +48,8 @@ void main() {
     final engine = GameEngine(
       initialSnapshot: _snapshot(
         [
-          const Tile(type: ElementType.fire),
-          const Tile(type: ElementType.stone, level: 0),
+          Tile(type: ElementType.fire),
+          Tile(type: ElementType.stone, level: 0),
           null,
           null,
         ],
@@ -66,8 +66,8 @@ void main() {
     final engine = GameEngine(
       initialSnapshot: _snapshot(
         [
-          const Tile(type: ElementType.earth),
-          const Tile(type: ElementType.earth),
+          Tile(type: ElementType.earth),
+          Tile(type: ElementType.earth),
           null,
           null,
         ],

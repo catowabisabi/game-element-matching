@@ -112,7 +112,8 @@ class PetState {
       experience: json['experience'] as int? ?? 0,
       hunger: json['hunger'] as int? ?? 70,
       mood: json['mood'] as int? ?? 70,
-      affinity: ElementType.values.byName(json['affinity'] as String? ?? 'fire'),
+      affinity:
+          ElementType.values.byName(json['affinity'] as String? ?? 'fire'),
     );
   }
 

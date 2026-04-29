@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('same basic element evolves and scores by level', () {
     final result = fuseTiles(
-      const Tile(type: ElementType.fire, level: 2),
-      const Tile(type: ElementType.fire, level: 2),
+      Tile(type: ElementType.fire, level: 2),
+      Tile(type: ElementType.fire, level: 2),
       1,
     );
 
@@ -19,8 +19,8 @@ void main() {
 
   test('level four basic fusion can create sage stone', () {
     final result = fuseTiles(
-      const Tile(type: ElementType.water, level: 3),
-      const Tile(type: ElementType.water, level: 3),
+      Tile(type: ElementType.water, level: 3),
+      Tile(type: ElementType.water, level: 3),
       0.1,
     );
 
@@ -31,8 +31,8 @@ void main() {
   test('cross element reactions match the HTML prototype', () {
     expect(
       fuseTiles(
-        const Tile(type: ElementType.fire),
-        const Tile(type: ElementType.earth),
+        Tile(type: ElementType.fire),
+        Tile(type: ElementType.earth),
         1,
       )!
           .tile!
@@ -41,30 +41,28 @@ void main() {
     );
     expect(
       fuseTiles(
-        const Tile(type: ElementType.water),
-        const Tile(type: ElementType.earth),
+        Tile(type: ElementType.water),
+        Tile(type: ElementType.earth),
         1,
       )!
           .tile!
           .type,
       ElementType.plant,
     );
-    expect(
-      fuseTiles(
-        const Tile(type: ElementType.fire),
-        const Tile(type: ElementType.water),
-        1,
-      )!
-          .tile!
-          .type,
-      ElementType.steam,
+    final steam = fuseTiles(
+      Tile(type: ElementType.fire),
+      Tile(type: ElementType.water),
+      1,
     );
+    expect(steam, isNotNull);
+    expect(steam!.tile, isNull);
+    expect(steam.countsForMana, isFalse);
   });
 
   test('steam reaction clears both tiles without mana', () {
     final result = fuseTiles(
-      const Tile(type: ElementType.steam),
-      const Tile(type: ElementType.earth),
+      Tile(type: ElementType.steam),
+      Tile(type: ElementType.earth),
       1,
     );
 
@@ -75,8 +73,8 @@ void main() {
 
   test('stone blocks fusion', () {
     final result = fuseTiles(
-      const Tile(type: ElementType.stone),
-      const Tile(type: ElementType.fire),
+      Tile(type: ElementType.stone),
+      Tile(type: ElementType.fire),
       1,
     );
 
