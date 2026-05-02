@@ -43,6 +43,7 @@ class GameSnapshot {
         'gameOver': gameOver,
         'won': won,
         'coins': coins,
+        'shieldActive': shieldActive,
       };
 
   static GameSnapshot fromJson(Map<String, Object?> json) {
@@ -65,6 +66,7 @@ class GameSnapshot {
       gameOver: json['gameOver'] as bool? ?? false,
       won: json['won'] as bool? ?? false,
       coins: json['coins'] as int? ?? 0,
+      shieldActive: json['shieldActive'] as bool? ?? false,
     );
   }
 

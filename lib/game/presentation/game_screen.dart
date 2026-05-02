@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../pet/pet_state.dart';
 import '../../services/audio_service.dart';
@@ -56,7 +55,8 @@ class _TutorialOverlayState extends State<TutorialOverlay>
       duration: const Duration(milliseconds: 340),
       vsync: this,
     );
-    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _fadeAnimation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _scaleAnimation = CurvedAnimation(
       parent: _controller,
       curve: Curves.easeOutBack,
@@ -262,8 +262,10 @@ class _TooltipPopupState extends State<TooltipPopup>
       duration: const Duration(milliseconds: 260),
       vsync: this,
     );
-    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _scaleAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _fadeAnimation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _scaleAnimation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
     _controller.forward();
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -311,6 +313,8 @@ class _TooltipPopupState extends State<TooltipPopup>
   }
 }
 
+enum _MainTab { game, pet, shop, help, settings }
+
 class GameScreen extends StatefulWidget {
   const GameScreen({required this.store, super.key});
 
@@ -326,6 +330,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   PetState _pet = PetState.initial();
   bool _loading = true;
   bool _showPet = false;
+  _MainTab _tab = _MainTab.game;
+  double _bgmVolume = 0.22;
+  double _sfxVolume = 0.72;
   final GlobalKey<_PetAnimationWidgetState> _petAnimKey = GlobalKey();
 
   // Tutorial state
@@ -333,7 +340,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _seenTutorial = false;
   String? _activeTooltip;
   bool _showPetTooltips = false;
-  int _mergeCount = 0;
+  bool _selectingSpellTarget = false;
   int _hintCount = 0;
   int _manaCount = 0;
   int _feedCount = 0;
@@ -396,13 +403,32 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     await widget.store.savePet(_pet);
   }
 
+  void _selectTab(_MainTab tab) {
+    setState(() {
+      _tab = tab;
+      _selectingSpellTarget = false;
+      _showPet = tab == _MainTab.pet;
+      if (_showPet && !_seenTutorial) {
+        _showPetTooltips = true;
+      }
+    });
+  }
+
   @override
   void dispose() {
     _shakeController.dispose();
     super.dispose();
   }
 
-Future<void> _move(Direction direction) async {
+  Future<void> _move(Direction direction) async {
+    if (_selectingSpellTarget) {
+      setState(() {
+        _selectingSpellTarget = false;
+        _engine.snapshot = _game.copyWith(lastMessage: '已取消施法選取');
+      });
+      return;
+    }
+
     final beforeGameOver = _game.gameOver || _game.won;
     final result = _engine.move(direction);
     if (!result) {
@@ -433,17 +459,39 @@ Future<void> _move(Direction direction) async {
   }
 
   void _restart() {
-    setState(() => _engine.restart());
+    setState(() {
+      _selectingSpellTarget = false;
+      _engine.restart();
+    });
     _save();
   }
 
   void _useManaSkill() {
-    final result = _engine.useManaSkill();
-    if (result && _manaCount == 0) {
-      _manaCount = 1;
-      _activeTooltip = '法力技能消耗3法力移除最低級元素';
+    if (_game.gameOver || _game.won || _game.mana < manaCost) {
+      _engine.useManaSkill();
+      setState(() {});
+      return;
     }
-    setState(() {});
+
+    setState(() {
+      _selectingSpellTarget = !_selectingSpellTarget;
+      _engine.snapshot = _game.copyWith(
+        lastMessage:
+            _selectingSpellTarget ? '選一個元素，用 $manaCost 法力清除' : '已取消施法選取',
+      );
+    });
+  }
+
+  void _castManaSkillAt(int index) {
+    final result = _engine.useManaSkillAt(index);
+    if (result) {
+      _audio.playLevelUp();
+      if (_manaCount == 0) {
+        _manaCount = 1;
+        _activeTooltip = '法術現在可以指定目標，先按法術再點元素';
+      }
+    }
+    setState(() => _selectingSpellTarget = false);
     _save();
   }
 
@@ -493,39 +541,84 @@ Future<void> _move(Direction direction) async {
     }
   }
 
+  void _patPet() {
+    setState(() {
+      _pet = _pet.pat();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 很開心');
+    });
+    _petAnimKey.currentState?.triggerHappyAnimation();
+    _save();
+  }
+
+  void _playWithPet() {
+    setState(() {
+      _pet = _pet.play();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 跟你玩了一會');
+    });
+    _petAnimKey.currentState?.triggerHappyAnimation();
+    _save();
+  }
+
+  void _restPet() {
+    setState(() {
+      _pet = _pet.rest();
+      _engine.snapshot = _game.copyWith(lastMessage: '${_pet.formName} 休息好了');
+    });
+    _petAnimKey.currentState?.triggerEatAnimation();
+    _save();
+  }
+
   void _showShop() {
+    _audio.playShop();
+    _selectTab(_MainTab.shop);
+  }
+
+  void _buyShopItem(_ShopItem item) {
+    setState(() {
+      switch (item) {
+        case _ShopItem.hint:
+          _buyHint();
+          break;
+        case _ShopItem.mana:
+          _engine.buyMana();
+          break;
+        case _ShopItem.food:
+          _feedPet();
+          break;
+        case _ShopItem.shield:
+          _engine.buyShield();
+          break;
+        case _ShopItem.reroll:
+          _engine.buyReroll();
+          break;
+      }
+    });
+    _audio.playShop();
+    _save();
+  }
+
+  void _showDemoPurchase(String title, String price, int coins) {
     _audio.playShop();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xff1a1f35),
+      backgroundColor: const Color(0xff151b2c),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => _ShopSheet(
-        coins: _game.coins,
-        onBuy: (item) {
+      builder: (context) => _DemoPurchaseSheet(
+        title: title,
+        price: price,
+        onConfirm: () {
           setState(() {
-            switch (item) {
-              case _ShopItem.hint:
-                _buyHint();
-                break;
-              case _ShopItem.mana:
-                _engine.buyMana();
-                break;
-              case _ShopItem.food:
-                _feedPet();
-                break;
-              case _ShopItem.shield:
-                _engine.buyShield();
-                break;
-              case _ShopItem.reroll:
-                _engine.buyReroll();
-                break;
-            }
+            _engine.snapshot = _game.copyWith(
+              coins: _game.coins + coins,
+              lastMessage: 'Demo purchase complete: +$coins coins',
+            );
           });
-          _audio.playShop();
+          _audio.playWin();
           _save();
-          Navigator.pop(context);
+          Navigator.of(context).pop();
         },
       ),
     );
@@ -579,9 +672,17 @@ Future<void> _move(Direction direction) async {
         children: [
           GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onPanEnd: _handlePanEnd,
-            onDoubleTap: _showPet ? _feedPet : _useManaSkill,
-            onLongPress: _showPet ? _feedPet : _buyHint,
+            onPanEnd: _tab == _MainTab.game ? _handlePanEnd : null,
+            onDoubleTap: _tab == _MainTab.pet
+                ? _feedPet
+                : _tab == _MainTab.game
+                    ? _useManaSkill
+                    : null,
+            onLongPress: _tab == _MainTab.pet
+                ? _feedPet
+                : _tab == _MainTab.game
+                    ? _buyHint
+                    : null,
             child: DecoratedBox(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
@@ -597,7 +698,20 @@ Future<void> _move(Direction direction) async {
               child: SafeArea(
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 260),
-                  child: _showPet ? _petLayer() : _gameLayer(),
+                  transitionBuilder: (child, animation) {
+                    final slide = Tween<Offset>(
+                      begin: const Offset(0.06, 0),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ));
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: slide, child: child),
+                    );
+                  },
+                  child: _activeLayer(),
                 ),
               ),
             ),
@@ -621,7 +735,45 @@ Future<void> _move(Direction direction) async {
             ),
         ],
       ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tab.index,
+        backgroundColor: const Color(0xff12182a),
+        indicatorColor: const Color(0xff6fe08b).withOpacity(0.18),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.grid_view_rounded),
+            label: 'Game',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.pets_rounded),
+            label: 'Pet',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_rounded),
+            label: 'Shop',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_rounded),
+            label: 'Help',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_rounded),
+            label: 'Settings',
+          ),
+        ],
+        onDestinationSelected: (index) => _selectTab(_MainTab.values[index]),
+      ),
     );
+  }
+
+  Widget _activeLayer() {
+    return switch (_tab) {
+      _MainTab.game => _gameLayer(),
+      _MainTab.pet => _petLayer(),
+      _MainTab.shop => _shopPage(),
+      _MainTab.help => _helpPage(),
+      _MainTab.settings => _settingsPage(),
+    };
   }
 
   List<TutorialStep> get _tutorialSteps => [
@@ -697,12 +849,17 @@ Future<void> _move(Direction direction) async {
       child: Row(
         children: [
           const Expanded(
-            child: Text(
-              'Elementary',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                color: Color(0xffffb452),
+            child: FittedBox(
+              alignment: Alignment.centerLeft,
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'Elementary',
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xffffb452),
+                ),
               ),
             ),
           ),
@@ -710,20 +867,7 @@ Future<void> _move(Direction direction) async {
           const SizedBox(width: 4),
           _iconAction(Icons.refresh_rounded, _restart),
           const SizedBox(width: 4),
-          FloatingActionButton.small(
-            onPressed: () {
-              setState(() {
-                _showPet = !_showPet;
-                if (_showPet && !_seenTutorial) {
-                  _showPetTooltips = true;
-                }
-              });
-            },
-            backgroundColor: const Color(0xff6fe08b).withOpacity(0.9),
-            foregroundColor: Colors.white,
-            tooltip: '查看寵物',
-            child: const Icon(Icons.pets_rounded),
-          ),
+          _iconAction(Icons.pets_rounded, () => _selectTab(_MainTab.pet)),
         ],
       ),
     );
@@ -749,7 +893,8 @@ Future<void> _move(Direction direction) async {
           const SizedBox(width: 8),
           Expanded(child: _statBox('金幣', _game.coins, const Color(0xff6fe08b))),
           const SizedBox(width: 8),
-          Expanded(child: _statBox('紀錄', _game.record, const Color(0xffc991ff))),
+          Expanded(
+              child: _statBox('紀錄', _game.record, const Color(0xffc991ff))),
         ],
       ),
     );
@@ -795,9 +940,11 @@ Future<void> _move(Direction direction) async {
     return LayoutBuilder(
       builder: (context, constraints) {
         final side = math.min(constraints.maxWidth, constraints.maxHeight);
-        final boardSize = math.min(side, 520).toDouble();
+        final outerBoardSize = math.min(side, 520).toDouble();
+        const boardPadding = 10.0;
+        final boardSize = math.max(0.0, outerBoardSize - boardPadding * 2);
         // Calculate cell size based on 4x4 grid with 10px spacing
-        final totalSpacing = 10 * (gridSize - 1); // 30
+        const totalSpacing = 10 * (gridSize - 1); // 30
         _cellSize = (boardSize - totalSpacing) / gridSize;
         _spacing = 10;
 
@@ -855,6 +1002,7 @@ Future<void> _move(Direction direction) async {
           child: SizedBox.square(
             dimension: boardSize,
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 // Background grid
                 GridView.builder(
@@ -871,19 +1019,30 @@ Future<void> _move(Direction direction) async {
                 ),
                 // Animated tiles layer
                 ..._animatedTiles.values.map((animatedTile) {
-                  final row = animatedTile.currentIndex ~/ gridSize;
-                  final col = animatedTile.currentIndex % gridSize;
+                  final row = animatedTile.targetIndex ~/ gridSize;
+                  final col = animatedTile.targetIndex % gridSize;
 
                   return AnimatedPositioned(
                     key: ValueKey(animatedTile.id),
-                    duration: Duration(milliseconds: animatedTile.isNew ? 300 : 200),
-                    curve: animatedTile.isNew ? Curves.easeOutBack : Curves.easeOutCubic,
+                    duration:
+                        Duration(milliseconds: animatedTile.isNew ? 300 : 200),
+                    curve: animatedTile.isNew
+                        ? Curves.easeOutBack
+                        : Curves.easeOutCubic,
                     left: col * (_cellSize + _spacing),
                     top: row * (_cellSize + _spacing),
-                    child: _TileCell(
-                      tile: animatedTile.tile,
-                      highlighted: _isHintEdge(animatedTile.targetIndex),
-                      cellSize: _cellSize,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _selectingSpellTarget
+                          ? () => _castManaSkillAt(animatedTile.targetIndex)
+                          : null,
+                      child: _TileCell(
+                        tile: animatedTile.tile,
+                        highlighted: _isHintEdge(animatedTile.targetIndex),
+                        selectable: _selectingSpellTarget &&
+                            animatedTile.tile.type != ElementType.sage,
+                        cellSize: _cellSize,
+                      ),
                     ),
                   );
                 }),
@@ -940,7 +1099,9 @@ Future<void> _move(Direction direction) async {
               Text(
                 _game.won ? '賢者之石完成' : '元素停滯',
                 style: TextStyle(
-                  color: _game.won ? const Color(0xffc991ff) : const Color(0xffff6f6f),
+                  color: _game.won
+                      ? const Color(0xffc991ff)
+                      : const Color(0xffff6f6f),
                   fontSize: 30,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1039,6 +1200,459 @@ Future<void> _move(Direction direction) async {
     );
   }
 
+  Widget _shopPage() {
+    return SingleChildScrollView(
+      key: const ValueKey('shop'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pageHeader(
+            icon: Icons.storefront_rounded,
+            title: 'Shop',
+            subtitle: 'Buy food, boosters, and demo premium packs.',
+          ),
+          const SizedBox(height: 16),
+          _coinPill(_game.coins),
+          const SizedBox(height: 18),
+          _sectionTitle('Coin shop'),
+          _responsiveShopGrid([
+            _ShopCard(
+              emoji: '💡',
+              name: 'Hint potion',
+              price: 10,
+              desc: 'Shows the best direction.',
+              enabled: _game.coins >= 10,
+              onTap: () => _buyShopItem(_ShopItem.hint),
+            ),
+            _ShopCard(
+              emoji: '💎',
+              name: 'Mana crystal',
+              price: 15,
+              desc: '+3 mana for skills.',
+              enabled: _game.coins >= 15,
+              onTap: () => _buyShopItem(_ShopItem.mana),
+            ),
+            _ShopCard(
+              emoji: '🍖',
+              name: 'Pet snack',
+              price: 5,
+              desc: 'Feed and cheer your pet.',
+              enabled: _game.coins >= 5,
+              onTap: () => _buyShopItem(_ShopItem.food),
+            ),
+            _ShopCard(
+              emoji: '🛡',
+              name: 'Stone shield',
+              price: 20,
+              desc: 'Blocks the next stone spawn.',
+              enabled: _game.coins >= 20,
+              onTap: () => _buyShopItem(_ShopItem.shield),
+            ),
+            _ShopCard(
+              emoji: '🎲',
+              name: 'Reroll',
+              price: 25,
+              desc: 'Changes one tile type and keeps its level.',
+              enabled: _game.coins >= 25,
+              onTap: () => _buyShopItem(_ShopItem.reroll),
+            ),
+          ]),
+          const SizedBox(height: 22),
+          _sectionTitle('Premium demo'),
+          _premiumCard(
+            title: 'Starter coin pack',
+            price: r'US$0.99',
+            coins: 120,
+            desc: 'Demo receipt, fake billing, real future-ready flow.',
+          ),
+          const SizedBox(height: 10),
+          _premiumCard(
+            title: 'Monthly supporter',
+            price: r'US$2.99',
+            coins: 500,
+            desc: 'Looks like a subscription; currently local demo only.',
+          ),
+          const SizedBox(height: 10),
+          _premiumCard(
+            title: 'Ad-free founder badge',
+            price: r'US$4.99',
+            coins: 900,
+            desc: 'Demo entitlement that can map to StoreKit/Billing later.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpPage() {
+    return SingleChildScrollView(
+      key: const ValueKey('help'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pageHeader(
+            icon: Icons.menu_book_rounded,
+            title: 'How to play',
+            subtitle: 'Move elements, learn reactions, and care for your pet.',
+          ),
+          const SizedBox(height: 16),
+          _settingsPanel(
+            title: 'Controls',
+            children: [
+              _helpTile(
+                Icons.swipe_rounded,
+                'Swipe the board',
+                'Swipe up, down, left, or right to slide all elements.',
+              ),
+              _helpTile(
+                Icons.auto_fix_high_rounded,
+                'Targeted spell',
+                'Double tap the board, then tap the exact tile you want to remove.',
+              ),
+              _helpTile(
+                Icons.pets_rounded,
+                'Pet interaction',
+                'Open Pet and tap, feed, play, or rest to change mood and growth.',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Fusion guide',
+            children: [
+              _fusionRow('Fire + Fire', 'Fire Lv.2, then Lv.3, Lv.4'),
+              _fusionRow('Water + Water', 'Water levels up'),
+              _fusionRow('Earth + Earth', 'Earth levels up'),
+              _fusionRow('Fire + Earth', 'Lava'),
+              _fusionRow('Water + Earth', 'Plant'),
+              _fusionRow('Fire + Water', 'Both clear in a steam reaction'),
+              _fusionRow('Plant + Water', 'Plant levels up'),
+              _fusionRow('Plant + Fire', 'Lava'),
+              _fusionRow('Lava + Fire', 'Lava levels up'),
+              _fusionRow('Lava + Water', 'Both clear'),
+              _fusionRow('Steam + anything', 'Both clear'),
+              _fusionRow('Stone', 'Blocks a lane until spell removes it'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Shop notes',
+            children: [
+              _helpTile(
+                Icons.casino_rounded,
+                'Reroll keeps level',
+                'Reroll changes an element type but keeps its current level.',
+              ),
+              _helpTile(
+                Icons.shopping_bag_rounded,
+                'Demo premium items',
+                'Real-money style packs are local demo purchases for future billing integration.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpTile(IconData icon, String title, String body) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(body),
+    );
+  }
+
+  Widget _fusionRow(String source, String result) {
+    return ListTile(
+      dense: true,
+      leading: const Icon(Icons.merge_type_rounded),
+      title: Text(source),
+      trailing: const Icon(Icons.arrow_forward_rounded, size: 18),
+      subtitle: Text(result),
+    );
+  }
+
+  Widget _settingsPage() {
+    return SingleChildScrollView(
+      key: const ValueKey('settings'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _pageHeader(
+            icon: Icons.settings_rounded,
+            title: 'Settings',
+            subtitle: 'Audio, motion, demo billing, and save controls.',
+          ),
+          const SizedBox(height: 18),
+          _settingsPanel(
+            title: 'Audio',
+            children: [
+              _volumeRow(
+                label: 'BGM',
+                value: _bgmVolume,
+                icon: Icons.music_note_rounded,
+                onChanged: (value) {
+                  setState(() => _bgmVolume = value);
+                  _audio.setBgmVolume(value);
+                },
+              ),
+              _volumeRow(
+                label: 'SFX',
+                value: _sfxVolume,
+                icon: Icons.volume_up_rounded,
+                onChanged: (value) {
+                  setState(() => _sfxVolume = value);
+                  _audio.setSfxVolume(value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Gameplay demo',
+            children: [
+              SwitchListTile(
+                value: true,
+                onChanged: (_) {},
+                title: const Text('Demo purchases enabled'),
+                subtitle: const Text(
+                    'Fake checkout now, real billing service later.'),
+              ),
+              SwitchListTile(
+                value: true,
+                onChanged: (_) {},
+                title: const Text('Reduce tile clipping'),
+                subtitle: const Text(
+                    'Board uses fixed padding and constrained cells.'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.help_outline_rounded),
+                title: const Text('Show tutorial again'),
+                onTap: () => setState(() => _showTutorial = true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _settingsPanel(
+            title: 'Save',
+            children: [
+              ListTile(
+                leading: const Icon(Icons.save_rounded),
+                title: const Text('Save now'),
+                subtitle:
+                    const Text('Writes game and pet state to local storage.'),
+                onTap: _save,
+              ),
+              ListTile(
+                leading: const Icon(Icons.restart_alt_rounded),
+                title: const Text('Restart board'),
+                subtitle: const Text('Keeps coins and pet progress.'),
+                onTap: _restart,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pageHeader({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: const Color(0xff6fe08b), size: 30),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _coinPill(int coins) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xff6fe08b).withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xff6fe08b).withOpacity(0.28)),
+        ),
+        child: Text(
+          'Coins $coins',
+          style: const TextStyle(
+            color: Color(0xff6fe08b),
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.78),
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _responsiveShopGrid(List<Widget> children) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 760
+            ? 3
+            : constraints.maxWidth >= 460
+                ? 2
+                : 1;
+        return GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: columns,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: columns == 1 ? 2.45 : 1.35,
+          children: children,
+        );
+      },
+    );
+  }
+
+  Widget _premiumCard({
+    required String title,
+    required String price,
+    required int coins,
+    required String desc,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xffffb452).withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.workspace_premium_rounded, color: Color(0xffffb452)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  desc,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.52),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: () => _showDemoPurchase(title, price, coins),
+            child: Text(price),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsPanel({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.09)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _volumeRow({
+    required String label,
+    required double value,
+    required IconData icon,
+    required ValueChanged<double> onChanged,
+  }) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: Slider(
+        value: value,
+        onChanged: onChanged,
+      ),
+      trailing: Text('${(value * 100).round()}%'),
+    );
+  }
+
   Widget _petLayer() {
     final petColor = _pet.affinity.colorForLevel(_pet.stage);
     return Stack(
@@ -1052,7 +1666,7 @@ Future<void> _move(Direction direction) async {
                 children: [
                   const Expanded(
                     child: Text(
-                      'Pet Layer',
+                      'Pet',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -1060,9 +1674,10 @@ Future<void> _move(Direction direction) async {
                       ),
                     ),
                   ),
-                  _iconAction(Icons.keyboard_arrow_down_rounded, () {
-                    setState(() => _showPet = false);
-                  }),
+                  _iconAction(
+                    Icons.grid_view_rounded,
+                    () => _selectTab(_MainTab.game),
+                  ),
                 ],
               ),
             ),
@@ -1073,55 +1688,65 @@ Future<void> _move(Direction direction) async {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _PetAnimationWidget(
-                        key: _petAnimKey,
-                        onEatTriggered: () { _audio.playEat(); },
-                        onHappyTriggered: () { _audio.playWin(); },
-                        onEvolveTriggered: () { _audio.playLevelUp(); },
-                        child: TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0.92, end: 1),
-                      duration: const Duration(milliseconds: 700),
-                      curve: Curves.elasticOut,
-                      builder: (context, scale, child) {
-                        return Transform.scale(scale: scale, child: child);
-                      },
-                      child: Container(
-                        width: 180,
-                        height: 180,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              petColor.withOpacity(0.96),
-                              petColor.withOpacity(0.52),
-                              Colors.black.withOpacity(0.16),
-                            ],
-                          ),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.24),
-                            width: 3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: petColor.withOpacity(0.38),
-                              blurRadius: 32,
-                              spreadRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            _pet.affinity.shortLabel,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 64,
-                              fontWeight: FontWeight.w900,
+                      GestureDetector(
+                        onTap: _patPet,
+                        child: _PetAnimationWidget(
+                          key: _petAnimKey,
+                          onEatTriggered: () {
+                            _audio.playEat();
+                          },
+                          onHappyTriggered: () {
+                            _audio.playWin();
+                          },
+                          onEvolveTriggered: () {
+                            _audio.playLevelUp();
+                          },
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(begin: 0.92, end: 1),
+                            duration: const Duration(milliseconds: 700),
+                            curve: Curves.elasticOut,
+                            builder: (context, scale, child) {
+                              return Transform.scale(
+                                  scale: scale, child: child);
+                            },
+                            child: Container(
+                              width: 180,
+                              height: 180,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    petColor.withOpacity(0.96),
+                                    petColor.withOpacity(0.52),
+                                    Colors.black.withOpacity(0.16),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.24),
+                                  width: 3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: petColor.withOpacity(0.38),
+                                    blurRadius: 32,
+                                    spreadRadius: 4,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _pet.affinity.shortLabel,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 64,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
                       const SizedBox(height: 26),
                       Text(
                         _pet.formName,
@@ -1141,19 +1766,35 @@ Future<void> _move(Direction direction) async {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      _petMeter('飽足', _pet.hunger / 100, const Color(0xffffb452)),
+                      _petMeter(
+                          '飽足', _pet.hunger / 100, const Color(0xffffb452)),
                       const SizedBox(height: 12),
                       _petMeter('心情', _pet.mood / 100, const Color(0xff65d6ff)),
                       const SizedBox(height: 12),
-                      _petMeter('進化', _pet.evolutionProgress, const Color(0xffc991ff)),
+                      _petMeter('進化', _pet.evolutionProgress,
+                          const Color(0xffc991ff)),
                       const SizedBox(height: 28),
-                      Text(
-                        '長按或雙擊餵食  ·  5 金幣',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.44),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _feedPet,
+                            icon: const Icon(Icons.restaurant_rounded),
+                            label: const Text('Feed'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _playWithPet,
+                            icon: const Icon(Icons.toys_rounded),
+                            label: const Text('Play'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _restPet,
+                            icon: const Icon(Icons.bedtime_rounded),
+                            label: const Text('Rest'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1304,7 +1945,8 @@ class _PetAnimationWidgetState extends State<_PetAnimationWidget>
     _eatScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.2), weight: 1),
       TweenSequenceItem(tween: Tween(begin: 1.2, end: 1.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _eatController, curve: Curves.easeInOut));
+    ]).animate(
+        CurvedAnimation(parent: _eatController, curve: Curves.easeInOut));
     _eatController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         setState(() => _particles.clear());
@@ -1323,11 +1965,13 @@ class _PetAnimationWidgetState extends State<_PetAnimationWidget>
       TweenSequenceItem(tween: Tween(begin: 0.1, end: -0.1), weight: 2),
       TweenSequenceItem(tween: Tween(begin: -0.1, end: 0.1), weight: 2),
       TweenSequenceItem(tween: Tween(begin: 0.1, end: 0.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
+    ]).animate(
+        CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
     _happyScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.15), weight: 1),
       TweenSequenceItem(tween: Tween(begin: 1.15, end: 1.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
+    ]).animate(
+        CurvedAnimation(parent: _happyController, curve: Curves.easeInOut));
   }
 
   void _initEvolveAnimation() {
@@ -1338,11 +1982,13 @@ class _PetAnimationWidgetState extends State<_PetAnimationWidget>
     _evolveScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 1),
       TweenSequenceItem(tween: Tween(begin: 1.3, end: 1.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _evolveController, curve: Curves.easeOutBack));
+    ]).animate(
+        CurvedAnimation(parent: _evolveController, curve: Curves.easeOutBack));
     _evolveGlowAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 0.6), weight: 1),
       TweenSequenceItem(tween: Tween(begin: 0.6, end: 0.0), weight: 1),
-    ]).animate(CurvedAnimation(parent: _evolveController, curve: Curves.easeInOut));
+    ]).animate(
+        CurvedAnimation(parent: _evolveController, curve: Curves.easeInOut));
   }
 
   void triggerEatAnimation() {
@@ -1468,7 +2114,8 @@ class _FloatingParticleWidget extends StatelessWidget {
     if (adjustedProgress <= 0) return const SizedBox();
 
     final double yOffset = -80 * Curves.easeOut.transform(adjustedProgress);
-    final double xOffset = 30 * particle.angle * Curves.easeInOut.transform(adjustedProgress);
+    final double xOffset =
+        30 * particle.angle * Curves.easeInOut.transform(adjustedProgress);
     final double opacity = (1 - adjustedProgress).clamp(0.0, 1.0);
 
     return Positioned(
@@ -1505,11 +2152,13 @@ class _TileCell extends StatelessWidget {
   const _TileCell({
     required this.tile,
     required this.highlighted,
+    required this.selectable,
     required this.cellSize,
   });
 
   final Tile? tile;
   final bool highlighted;
+  final bool selectable;
   final double cellSize;
 
   @override
@@ -1520,9 +2169,8 @@ class _TileCell extends StatelessWidget {
     }
 
     final color = tile.type.colorForLevel(tile.level);
-    final textColor = tile.type == ElementType.steam
-        ? const Color(0xff20242d)
-        : Colors.white;
+    final textColor =
+        tile.type == ElementType.steam ? const Color(0xff20242d) : Colors.white;
 
     Widget tileWidget = AnimatedOpacity(
       opacity: tile.justSpawned || tile.justMerged ? 0.74 : 1.0,
@@ -1530,7 +2178,7 @@ class _TileCell extends StatelessWidget {
       child: TweenAnimationBuilder<double>(
         tween: Tween(
           begin: tile.justSpawned ? 0.0 : (tile.justMerged ? 0.8 : 1.0),
-          end: tile.justMerged ? 1.05 : 1.0,
+          end: tile.justMerged ? 1.02 : 1.0,
         ),
         duration: Duration(milliseconds: tile.justSpawned ? 300 : 180),
         curve: tile.justSpawned ? Curves.easeOutBack : Curves.easeOutBack,
@@ -1549,16 +2197,21 @@ class _TileCell extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: highlighted
-                  ? const Color(0xffffe1a6)
-                  : Colors.white.withOpacity(tile.type == ElementType.stone ? 0.18 : 0.08),
-              width: highlighted ? 2 : 1,
+              color: selectable
+                  ? const Color(0xff65d6ff)
+                  : highlighted
+                      ? const Color(0xffffe1a6)
+                      : Colors.white.withOpacity(
+                          tile.type == ElementType.stone ? 0.18 : 0.08),
+              width: selectable || highlighted ? 2 : 1,
             ),
             boxShadow: [
               BoxShadow(
                 color: color.withOpacity(tile.justMerged ? 0.8 : 0.34),
-                blurRadius: tile.justMerged ? 24 : (tile.type == ElementType.sage ? 22 : 12),
-                spreadRadius: tile.justMerged ? 8 : 0,
+                blurRadius: tile.justMerged
+                    ? 24
+                    : (tile.type == ElementType.sage ? 22 : 12),
+                spreadRadius: tile.justMerged ? 3 : 0,
                 offset: const Offset(0, 5),
               ),
             ],
@@ -1602,13 +2255,17 @@ class _TileCell extends StatelessWidget {
     return SizedBox(
       width: cellSize,
       height: cellSize,
-      child: tileWidget,
+      child: Padding(
+        padding: const EdgeInsets.all(1),
+        child: tileWidget,
+      ),
     );
   }
 }
 
 enum _ShopItem { hint, mana, food, shield, reroll }
 
+// ignore: unused_element
 class _ShopSheet extends StatelessWidget {
   const _ShopSheet({required this.coins, required this.onBuy});
 
@@ -1643,11 +2300,13 @@ class _ShopSheet extends StatelessWidget {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: const Color(0xff6fe08b).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xff6fe08b).withOpacity(0.3)),
+                  border: Border.all(
+                      color: const Color(0xff6fe08b).withOpacity(0.3)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1785,7 +2444,10 @@ class _ShopCard extends StatelessWidget {
                   const Spacer(),
                   Row(
                     children: [
-                      Text('🪙', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+                      Text('🪙',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.5))),
                       const SizedBox(width: 2),
                       Text(
                         '$price',
@@ -1821,6 +2483,143 @@ class _ShopCard extends StatelessWidget {
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DemoPurchaseSheet extends StatefulWidget {
+  const _DemoPurchaseSheet({
+    required this.title,
+    required this.price,
+    required this.onConfirm,
+  });
+
+  final String title;
+  final String price;
+  final VoidCallback onConfirm;
+
+  @override
+  State<_DemoPurchaseSheet> createState() => _DemoPurchaseSheetState();
+}
+
+class _DemoPurchaseSheetState extends State<_DemoPurchaseSheet> {
+  var _processing = false;
+
+  Future<void> _confirm() async {
+    setState(() => _processing = true);
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    widget.onConfirm();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.lock_rounded,
+                  color: Color(0xff6fe08b),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Demo checkout',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed:
+                      _processing ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.workspace_premium_rounded,
+                    color: Color(0xffffb452),
+                    size: 34,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Sandbox receipt • no real charge',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.52),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    widget.price,
+                    style: const TextStyle(
+                      color: Color(0xff6fe08b),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'This is wired like a real purchase flow: product, loading state, receipt success, and restore-ready entitlement. It does not contact Apple, Google, Stripe, or any payment network yet.',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.58),
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _processing ? null : _confirm,
+              icon: _processing
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.verified_rounded),
+              label:
+                  Text(_processing ? 'Processing...' : 'Confirm demo purchase'),
+            ),
           ],
         ),
       ),

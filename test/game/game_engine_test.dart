@@ -12,8 +12,8 @@ void main() {
     final engine = GameEngine(
       random: Random(1),
       initialSnapshot: _snapshot([
-        const Tile(type: ElementType.fire),
-        const Tile(type: ElementType.fire),
+        Tile(type: ElementType.fire),
+        Tile(type: ElementType.fire),
         null,
         null,
       ]),
@@ -22,7 +22,7 @@ void main() {
     expect(engine.move(Direction.left), isTrue);
     expect(engine.snapshot.grid[0]!.type, ElementType.fire);
     expect(engine.snapshot.grid[0]!.level, 2);
-    expect(engine.snapshot.score, 10);
+    expect(engine.snapshot.score, 30);
     expect(engine.snapshot.mana, 1);
   });
 
@@ -31,9 +31,9 @@ void main() {
       random: Random(1),
       initialSnapshot: _snapshot([
         null,
-        const Tile(type: ElementType.stone, level: 0),
-        const Tile(type: ElementType.water),
-        const Tile(type: ElementType.water),
+        Tile(type: ElementType.stone, level: 0),
+        Tile(type: ElementType.water),
+        Tile(type: ElementType.water),
       ]),
     );
 
@@ -48,8 +48,8 @@ void main() {
     final engine = GameEngine(
       initialSnapshot: _snapshot(
         [
-          const Tile(type: ElementType.fire),
-          const Tile(type: ElementType.stone, level: 0),
+          Tile(type: ElementType.fire),
+          Tile(type: ElementType.stone, level: 0),
           null,
           null,
         ],
@@ -62,12 +62,31 @@ void main() {
     expect(engine.snapshot.mana, 0);
   });
 
+  test('targeted mana skill removes selected tile', () {
+    final engine = GameEngine(
+      initialSnapshot: _snapshot(
+        [
+          Tile(type: ElementType.fire),
+          Tile(type: ElementType.water),
+          null,
+          null,
+        ],
+        mana: manaCost,
+      ),
+    );
+
+    expect(engine.useManaSkillAt(1), isTrue);
+    expect(engine.snapshot.grid[0], isNotNull);
+    expect(engine.snapshot.grid[1], isNull);
+    expect(engine.snapshot.mana, 0);
+  });
+
   test('buy hint spends coins and chooses a direction', () {
     final engine = GameEngine(
       initialSnapshot: _snapshot(
         [
-          const Tile(type: ElementType.earth),
-          const Tile(type: ElementType.earth),
+          Tile(type: ElementType.earth),
+          Tile(type: ElementType.earth),
           null,
           null,
         ],
@@ -78,6 +97,25 @@ void main() {
     expect(engine.buyHint(), isTrue);
     expect(engine.snapshot.coins, 10);
     expect(engine.snapshot.hintDirection, isNotNull);
+  });
+
+  test('reroll keeps the selected tile level', () {
+    final engine = GameEngine(
+      random: Random(1),
+      initialSnapshot: _snapshot(
+        [
+          Tile(type: ElementType.fire, level: 3),
+          null,
+          null,
+          null,
+        ],
+        coins: 25,
+      ),
+    );
+
+    expect(engine.buyReroll(), isTrue);
+    expect(engine.snapshot.grid[0]!.level, 3);
+    expect(engine.snapshot.coins, 0);
   });
 }
 

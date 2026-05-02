@@ -9,7 +9,11 @@ class Tile {
     this.justMerged = false,
     this.justSpawned = false,
     int? id,
-  }) : id = id ?? _nextId++;
+  }) : id = id ?? _nextId++ {
+    if (this.id >= _nextId) {
+      _nextId = this.id + 1;
+    }
+  }
 
   // id can be null for deserialized tiles that don't have stable identity
   final int id;
@@ -41,12 +45,14 @@ class Tile {
   }
 
   Map<String, Object?> toJson() => {
+        'id': id,
         'type': type.name,
         'level': level,
       };
 
   static Tile fromJson(Map<String, Object?> json) {
     return Tile(
+      id: json['id'] as int?,
       type: ElementType.values.byName(json['type'] as String),
       level: json['level'] as int? ?? 1,
     );

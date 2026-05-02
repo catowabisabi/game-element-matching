@@ -49,7 +49,8 @@ class GameEngine {
     }
 
     final cleaned = _clearTransientFlags(snapshot.grid);
-    final outcome = _moveBoard(cleaned, direction, randomValue: _random.nextDouble());
+    final outcome =
+        _moveBoard(cleaned, direction, randomValue: _random.nextDouble());
     if (!outcome.moved) {
       snapshot = snapshot.copyWith(
         grid: cleaned,
@@ -95,9 +96,9 @@ class GameEngine {
           ? '賢者之石誕生了'
           : isGameOver
               ? '棋盤已經沒有反應空間'
-          : coinsEarned > 0
-              ? '獲得 $coinsEarned 金幣'
-              : null,
+              : coinsEarned > 0
+                  ? '獲得 $coinsEarned 金幣'
+                  : null,
     );
     return true;
   }
@@ -120,6 +121,32 @@ class GameEngine {
       grid: grid,
       mana: snapshot.mana - manaCost,
       lastMessage: '法力清出一格空間',
+    );
+    return true;
+  }
+
+  bool useManaSkillAt(int index) {
+    if (snapshot.gameOver || snapshot.won || snapshot.mana < manaCost) {
+      snapshot = snapshot.copyWith(lastMessage: '法力不足');
+      return false;
+    }
+    if (index < 0 || index >= snapshot.grid.length) {
+      snapshot = snapshot.copyWith(lastMessage: '這裡沒有可清除的元素');
+      return false;
+    }
+
+    final targetTile = snapshot.grid[index];
+    if (targetTile == null || targetTile.type == ElementType.sage) {
+      snapshot = snapshot.copyWith(lastMessage: '這裡沒有可清除的元素');
+      return false;
+    }
+
+    final grid = List<Tile?>.from(snapshot.grid);
+    grid[index] = null;
+    snapshot = snapshot.copyWith(
+      grid: grid,
+      mana: snapshot.mana - manaCost,
+      lastMessage: '法術清除了${targetTile.type.label}',
     );
     return true;
   }
@@ -183,7 +210,10 @@ class GameEngine {
     final grid = List<Tile?>.from(snapshot.grid);
     final candidates = [
       for (var i = 0; i < grid.length; i++)
-        if (grid[i] != null && grid[i]!.type != ElementType.stone && grid[i]!.type != ElementType.sage) i,
+        if (grid[i] != null &&
+            grid[i]!.type != ElementType.stone &&
+            grid[i]!.type != ElementType.sage)
+          i,
     ];
     if (candidates.isEmpty) {
       snapshot = snapshot.copyWith(lastMessage: '沒有可重骰的元素');
@@ -191,17 +221,23 @@ class GameEngine {
     }
 
     final target = candidates[_random.nextInt(candidates.length)];
-    final types = [ElementType.fire, ElementType.water, ElementType.earth, ElementType.plant];
+    final types = [
+      ElementType.fire,
+      ElementType.water,
+      ElementType.earth,
+      ElementType.plant
+    ];
+    final previous = grid[target]!;
     grid[target] = Tile(
       type: types[_random.nextInt(types.length)],
-      level: 1,
+      level: max(1, previous.level),
       justSpawned: true,
     );
 
     snapshot = snapshot.copyWith(
       grid: grid,
       coins: snapshot.coins - rerollCost,
-      lastMessage: '重骰了一個元素',
+      lastMessage: '重骰了一個元素，等級保留',
     );
     return true;
   }
@@ -275,7 +311,8 @@ class GameEngine {
     var won = false;
 
     void flushSegment(int start, int endExclusive) {
-      final positions = List<int>.generate(endExclusive - start, (i) => start + i);
+      final positions =
+          List<int>.generate(endExclusive - start, (i) => start + i);
       if (positions.isEmpty) {
         return;
       }
@@ -284,7 +321,8 @@ class GameEngine {
         for (final position in positions)
           if (line[position] != null) line[position]!,
       ];
-      final mergeTiles = towardEnd ? sourceTiles.reversed.toList() : sourceTiles;
+      final mergeTiles =
+          towardEnd ? sourceTiles.reversed.toList() : sourceTiles;
       final mergedTiles = <Tile?>[];
 
       for (var i = 0; i < mergeTiles.length; i++) {
@@ -312,7 +350,8 @@ class GameEngine {
         mergedTiles.add(null);
       }
 
-      final placedTiles = towardEnd ? mergedTiles.reversed.toList() : mergedTiles;
+      final placedTiles =
+          towardEnd ? mergedTiles.reversed.toList() : mergedTiles;
       for (var i = 0; i < positions.length; i++) {
         result[positions[i]] = placedTiles[i];
       }
@@ -412,7 +451,8 @@ class GameEngine {
   }
 
   int _skillTarget(List<Tile?> grid) {
-    final stoneIndex = grid.indexWhere((tile) => tile?.type == ElementType.stone);
+    final stoneIndex =
+        grid.indexWhere((tile) => tile?.type == ElementType.stone);
     if (stoneIndex != -1) {
       return stoneIndex;
     }

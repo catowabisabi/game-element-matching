@@ -51,9 +51,23 @@ FusionResult? fuseTiles(Tile first, Tile second, double randomValue) {
   }
 
   if (_hasPair(first, second, ElementType.fire, ElementType.water)) {
+    return const FusionResult(
+      score: 0,
+      countsForMana: false,
+    );
+  }
+
+  if (_hasPair(first, second, ElementType.lava, ElementType.water)) {
+    return const FusionResult(
+      score: 0,
+      countsForMana: false,
+    );
+  }
+
+  if (_hasPair(first, second, ElementType.lava, ElementType.fire)) {
     return FusionResult(
-      tile: Tile(type: ElementType.steam),
-      score: 50,
+      tile: Tile(type: ElementType.lava, level: 2),
+      score: 200,
     );
   }
 
@@ -71,8 +85,8 @@ FusionResult? fuseTiles(Tile first, Tile second, double randomValue) {
     );
   }
 
-  // Steam cancels steam (not everything else)
-  if (first.type == ElementType.steam && second.type == ElementType.steam) {
+  // Steam clears whatever it touches.
+  if (first.type == ElementType.steam || second.type == ElementType.steam) {
     return const FusionResult(
       score: 0,
       countsForMana: false,

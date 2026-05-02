@@ -78,6 +78,28 @@ class PetState {
     );
   }
 
+  PetState play() {
+    return copyWith(
+      experience: experience + 8,
+      hunger: (hunger - 8).clamp(0, 100).toInt(),
+      mood: (mood + 22).clamp(0, 100).toInt(),
+    );
+  }
+
+  PetState pat() {
+    return copyWith(
+      experience: experience + 4,
+      mood: (mood + 10).clamp(0, 100).toInt(),
+    );
+  }
+
+  PetState rest() {
+    return copyWith(
+      hunger: (hunger - 4).clamp(0, 100).toInt(),
+      mood: (mood + 12).clamp(0, 100).toInt(),
+    );
+  }
+
   PetState copyWith({
     String? name,
     int? stage,
@@ -112,7 +134,8 @@ class PetState {
       experience: json['experience'] as int? ?? 0,
       hunger: json['hunger'] as int? ?? 70,
       mood: json['mood'] as int? ?? 70,
-      affinity: ElementType.values.byName(json['affinity'] as String? ?? 'fire'),
+      affinity:
+          ElementType.values.byName(json['affinity'] as String? ?? 'fire'),
     );
   }
 
